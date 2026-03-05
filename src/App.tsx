@@ -189,13 +189,17 @@ export default function App() {
 
   // Modal states
   const [showBorrowerModal, setShowBorrowerModal] = useState(false);
+  const [showEditBorrowerModal, setShowEditBorrowerModal] = useState(false);
   const [showLoanModal, setShowLoanModal] = useState(false);
   const [showEditLoanModal, setShowEditLoanModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showCapitalModal, setShowCapitalModal] = useState(false);
+  const [showPaymentHistory, setShowPaymentHistory] = useState(false);
   const [selectedBorrower, setSelectedBorrower] = useState<Borrower | null>(null);
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
   const [viewingBorrowerProfile, setViewingBorrowerProfile] = useState<Borrower | null>(null);
+  const [paymentHistory, setPaymentHistory] = useState<Payment[]>([]);
+  const [loanPayments, setLoanPayments] = useState<{ [key: number]: Payment[] }>({}); // cache per loan id
 
   useEffect(() => {
     fetchStats();
@@ -252,6 +256,63 @@ export default function App() {
 
     setShowBorrowerModal(false);
     fetchBorrowers();
+  };
+
+  const handleEditBorrower = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!selectedBorrower) return;
+    const formData = new FormData(e.currentTarget);
+    const data = Object.fromEntries(formData.entries());
+    await fetch(`/api/borrowers/${selectedBorrower.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    setShowEditBorrowerModal(false);
+    setSelectedBorrower(null);
+    fetchBorrowers();
+    if (viewingBorrowerProfile?.id === selectedBorrower.id) {
+      setViewingBorrowerProfile({ ...viewingBorrowerProfile, ...data as any });
+    }
+  };
+
+  const handleDeleteBorrower = async (borrowerId: number) => {
+    if (!window.confirm('Delete this borrower and ALL their loans? This cannot be undone.')) return;
+    await fetch(`/api/borrowers/${borrowerId}`, { method: 'DELETE' });
+    setViewingBorrowerProfile(null);
+    fetchBorrowers();
+    fetchLoans();
+    fetchStats();
+  };
+
+  const handleDeleteLoan = async (loanId: number) => {
+    if (!window.confirm('Permanently delete this loan record?')) return;
+    await fetch(`/api/loans/${loanId}`, { method: 'DELETE' });
+    fetchLoans();
+    fetchStats();
+  };
+
+  const fetchPaymentHistory = async (loanId: number) => {
+    const res = await fetch(`/api/loans/${loanId}/payments`);
+    const data = await res.json();
+    setPaymentHistory(data);
+  };
+
+  const exportCSV = () => {
+    const headers = ['Loan ID', 'Borrower', 'Direction', 'Amount', 'Given', 'Type', 'Interest Rate', 'Installment', 'Start Date', 'Status', 'Paid', 'Balance'];
+    const rows = loans.map(l => [
+      l.id, l.borrower_name, l.direction, l.amount, l.given_amount,
+      l.loan_type, l.interest_rate, l.installment_amount || '', l.start_date,
+      l.status, l.paid_amount || 0, l.balance || 0
+    ]);
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `loan-report-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleCreateLoan = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -554,8 +615,14 @@ export default function App() {
                 </div>
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button className="p-2 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-all"><Edit2 size={16} /></button>
-                <button className="p-2 hover:bg-red-500/20 rounded-lg text-red-400 hover:text-red-300 transition-all"><Trash2 size={16} /></button>
+                <button
+                  className="p-2 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-all"
+                  onClick={() => { setSelectedBorrower(borrower); setShowEditBorrowerModal(true); }}
+                ><Edit2 size={16} /></button>
+                <button
+                  className="p-2 hover:bg-red-500/20 rounded-lg text-red-400 hover:text-red-300 transition-all"
+                  onClick={() => handleDeleteBorrower(borrower.id)}
+                ><Trash2 size={16} /></button>
               </div>
             </div>
 
@@ -634,7 +701,22 @@ export default function App() {
                 viewport={{ once: true }}
                 className="hover:bg-white/5 transition-colors group"
               >
-                <td className="px-4 py-4 font-mono text-sm text-white/40">#{loan.id}</td>
+                <td className="px-4 py-4">
+                  <div className="font-mono text-sm text-white/40">#{loan.id}</div>
+                  {/* Overdue alert */}
+                  {loan.status === 'Active' && loan.duration && (() => {
+                    const due = new Date(loan.start_date);
+                    if (loan.interest_type === 'Monthly') due.setMonth(due.getMonth() + loan.duration);
+                    else if (loan.interest_type === 'Weekly') due.setDate(due.getDate() + loan.duration * 7);
+                    else due.setDate(due.getDate() + loan.duration);
+                    const isOverdue = due < new Date();
+                    return isOverdue ? (
+                      <span className="flex items-center gap-1 text-[9px] font-black text-rose-400 mt-0.5">
+                        <AlertCircle size={9} /> OVERDUE
+                      </span>
+                    ) : null;
+                  })()}
+                </td>
                 <td className="px-4 py-4 font-semibold text-white">{loan.borrower_name}</td>
                 <td className="px-4 py-4">
                   <div className="font-bold text-white">₹{(loan.amount || 0).toLocaleString()}</div>
@@ -667,20 +749,26 @@ export default function App() {
                   </span>
                 </td>
                 <td className="px-4 py-4 text-right">
-                  <div className="flex justify-end gap-2">
+                  <div className="flex justify-end gap-1.5">
                     <Button variant="ghost" className="text-xs p-2" onClick={() => { setSelectedLoan(loan); setShowEditLoanModal(true); }}>
                       <Edit2 size={14} />
                     </Button>
                     {loan.status === 'Active' && (
                       <Button variant="ghost" className="text-xs p-2" onClick={() => { setSelectedLoan(loan); setShowPaymentModal(true); }}>
-                        Payment
+                        Pay
                       </Button>
                     )}
+                    <Button variant="ghost" className="text-xs p-2 text-blue-400 hover:text-blue-300" onClick={async () => { setSelectedLoan(loan); await fetchPaymentHistory(loan.id); setShowPaymentHistory(true); }}>
+                      <History size={14} />
+                    </Button>
                     {loan.status === 'Active' && (
                       <Button variant="ghost" className="text-xs p-2" onClick={() => handleCloseLoan(loan.id)}>
                         Close
                       </Button>
                     )}
+                    <Button variant="ghost" className="text-xs p-2 text-rose-400 hover:text-rose-300 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleDeleteLoan(loan.id)}>
+                      <Trash2 size={14} />
+                    </Button>
                   </div>
                 </td>
               </motion.tr>
@@ -716,7 +804,7 @@ export default function App() {
               <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[#d4af37] to-white">Financial Summary</h2>
               <p className="text-sm text-white/40 mt-1">Lent portfolio performance overview</p>
             </div>
-            <Button variant="secondary">
+            <Button variant="secondary" onClick={exportCSV}>
               <Download size={16} /> Export CSV
             </Button>
           </div>
@@ -725,17 +813,16 @@ export default function App() {
         {/* Stat Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: "Total Principal", value: reportData.totalAmount, color: "#d4af37", icon: "₹", glow: "rgba(212,175,55,0.3)" },
-            { label: "Interest Earned", value: reportData.totalInterest, color: "#10b981", icon: "+", glow: "rgba(16,185,129,0.3)" },
-            { label: "Total Received", value: reportData.totalPaid, color: "#60a5fa", icon: "↓", glow: "rgba(96,165,250,0.3)" },
-            { label: "Outstanding", value: reportData.outstanding, color: "#e11d48", icon: "!", glow: "rgba(225,29,72,0.3)" },
+            { label: "Total Principal", value: reportData.totalAmount, color: "#d4af37", glow: "rgba(212,175,55,0.3)" },
+            { label: "Interest Earned", value: reportData.totalInterest, color: "#10b981", glow: "rgba(16,185,129,0.3)" },
+            { label: "Total Received", value: reportData.totalPaid, color: "#60a5fa", glow: "rgba(96,165,250,0.3)" },
+            { label: "Outstanding", value: reportData.outstanding, color: "#e11d48", glow: "rgba(225,29,72,0.3)" },
           ].map((stat, i) => (
             <motion.div
               key={stat.label}
               variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0, transition: { delay: i * 0.1, type: "spring", bounce: 0.4 } } }}
             >
               <Card className={`p-5 relative overflow-hidden`} noHover>
-                {/* Ambient glow */}
                 <div className="absolute -top-6 -right-6 w-20 h-20 rounded-full blur-2xl opacity-30 pointer-events-none" style={{ backgroundColor: stat.color }} />
                 <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: stat.color }}>{stat.label}</p>
                 <p className="text-2xl sm:text-3xl font-black text-white truncate">₹{(stat.value || 0).toLocaleString('en-IN')}</p>
@@ -784,8 +871,8 @@ export default function App() {
                         <td className="px-6 py-4 font-semibold text-white">{loan.borrower_name}</td>
                         <td className="px-6 py-4">
                           <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full border ${loan.direction === 'Borrowed'
-                              ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-                              : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                            ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                             }`}>
                             {loan.direction}
                           </span>
@@ -932,16 +1019,38 @@ export default function App() {
       >
         <form onSubmit={handleAddBorrower} className="space-y-4">
           <Input label="Full Name" name="name" required placeholder="John Doe" />
-          <Input label="Phone Number" name="phone" required placeholder="+1 234 567 890" />
+          <Input label="Phone Number" name="phone" required placeholder="+91 9876543210" />
           <Input label="Address" name="address" placeholder="123 Street, City" />
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wider text-black/50 dark:text-white/40 ml-1">Notes</label>
+            <label className="text-[10px] font-black uppercase tracking-[0.15em] text-[#00e5ff] ml-1">Notes</label>
             <textarea
               name="notes"
-              className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 transition-all bg-white dark:bg-zinc-800 text-black dark:text-white min-h-[100px]"
+              className="w-full px-4 py-3 rounded-xl border border-white/10 focus:border-[#00e5ff]/50 focus:outline-none focus:ring-2 focus:ring-[#00e5ff]/20 transition-all bg-black/40 backdrop-blur-md text-white shadow-inner placeholder:text-white/20 min-h-[80px]"
             />
           </div>
           <Button type="submit" className="w-full py-3">Save Borrower</Button>
+        </form>
+      </Modal>
+
+      {/* Edit Borrower Modal */}
+      <Modal
+        isOpen={showEditBorrowerModal}
+        onClose={() => { setShowEditBorrowerModal(false); setSelectedBorrower(null); }}
+        title={`Edit — ${selectedBorrower?.name}`}
+      >
+        <form onSubmit={handleEditBorrower} className="space-y-4">
+          <Input label="Full Name" name="name" required defaultValue={selectedBorrower?.name} />
+          <Input label="Phone Number" name="phone" required defaultValue={selectedBorrower?.phone} />
+          <Input label="Address" name="address" defaultValue={selectedBorrower?.address} />
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] font-black uppercase tracking-[0.15em] text-[#00e5ff] ml-1">Notes</label>
+            <textarea
+              name="notes"
+              defaultValue={selectedBorrower?.notes}
+              className="w-full px-4 py-3 rounded-xl border border-white/10 focus:border-[#00e5ff]/50 focus:outline-none focus:ring-2 focus:ring-[#00e5ff]/20 transition-all bg-black/40 backdrop-blur-md text-white shadow-inner placeholder:text-white/20 min-h-[80px]"
+            />
+          </div>
+          <Button type="submit" className="w-full py-3">Update Borrower</Button>
         </form>
       </Modal>
 
@@ -1078,30 +1187,31 @@ export default function App() {
         </form>
       </Modal>
 
+      {/* Payment Summary in Payment Modal */}
       <Modal
         isOpen={showPaymentModal}
         onClose={() => { setShowPaymentModal(false); setSelectedLoan(null); }}
-        title={`Add Payment for Loan #${selectedLoan?.id}`}
+        title={`Record Payment — Loan #${selectedLoan?.id}`}
       >
         <form onSubmit={handleAddPayment} className="space-y-4">
           <input type="hidden" name="loan_id" value={selectedLoan?.id} />
-          <div className="p-4 bg-black/5 rounded-2xl mb-4">
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-black/50">Remaining Principal:</span>
-              <span className="font-bold">₹{(selectedLoan?.currentPrincipal || 0).toLocaleString()}</span>
+          <div className="p-4 rounded-2xl border border-white/10 bg-black/30 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-white/40">Remaining Principal:</span>
+              <span className="font-bold text-white">₹{(selectedLoan?.currentPrincipal || 0).toLocaleString('en-IN')}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-black/50">Interest Accrued:</span>
-              <span className="font-bold text-emerald-600">+₹{(selectedLoan?.accruedInterest || 0).toLocaleString()}</span>
+              <span className="text-white/40">Interest Accrued:</span>
+              <span className="font-bold text-emerald-400">+₹{(selectedLoan?.accruedInterest || 0).toLocaleString('en-IN')}</span>
             </div>
-            <div className="flex justify-between text-sm mt-2 pt-2 border-t border-black/5">
-              <span className="text-black/50">Total Balance:</span>
-              <span className="font-bold">₹{(selectedLoan?.balance || 0).toLocaleString()}</span>
+            <div className="flex justify-between text-sm pt-2 border-t border-white/10">
+              <span className="text-white/40">Total Balance:</span>
+              <span className="font-black text-white">₹{(selectedLoan?.balance || 0).toLocaleString('en-IN')}</span>
             </div>
           </div>
-          <Input label="Payment Amount (₹)" name="amount" type="number" required placeholder="200" />
+          <Input label="Payment Amount (₹)" name="amount" type="number" required placeholder="500" />
           <Input label="Payment Date" name="payment_date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} />
-          <Input label="Notes" name="notes" placeholder="Cash payment" />
+          <Input label="Notes (Optional)" name="notes" placeholder="Cash payment, transfer ref etc." />
           <Button type="submit" className="w-full py-3">Record Payment</Button>
         </form>
       </Modal>
@@ -1120,9 +1230,45 @@ export default function App() {
             defaultValue={stats.investedCapital}
             placeholder="500000"
           />
-          <p className="text-xs text-black/40">This is the total amount of money you have available for lending.</p>
+          <p className="text-xs text-white/30">This is the total amount of money you have available for lending.</p>
           <Button type="submit" className="w-full py-3">Update Capital</Button>
         </form>
+      </Modal>
+
+      {/* Payment History Modal */}
+      <Modal
+        isOpen={showPaymentHistory}
+        onClose={() => { setShowPaymentHistory(false); setPaymentHistory([]); setSelectedLoan(null); }}
+        title={`Payment History — Loan #${selectedLoan?.id} (${selectedLoan?.borrower_name})`}
+      >
+        <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+          {paymentHistory.length === 0 ? (
+            <div className="text-center py-10 text-white/30">No payments recorded yet.</div>
+          ) : (
+            paymentHistory.map((p, i) => (
+              <motion.div
+                key={p.id}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.05 }}
+                className="flex justify-between items-start p-4 rounded-xl bg-white/5 border border-white/10"
+              >
+                <div>
+                  <p className="font-black text-white text-lg">₹{(p.amount || 0).toLocaleString('en-IN')}</p>
+                  <p className="text-xs text-white/40 mt-0.5">{new Date(p.payment_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                  {p.notes && <p className="text-xs text-white/30 mt-1 italic">{p.notes}</p>}
+                </div>
+                <span className="text-[10px] font-black uppercase px-2 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-full">Paid</span>
+              </motion.div>
+            ))
+          )}
+        </div>
+        {paymentHistory.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-white/10 flex justify-between">
+            <span className="text-white/40 text-sm">Total Paid:</span>
+            <span className="font-black text-white">₹{paymentHistory.reduce((s, p) => s + (p.amount || 0), 0).toLocaleString('en-IN')}</span>
+          </div>
+        )}
       </Modal>
 
       {/* Borrower Profile View */}
@@ -1141,13 +1287,13 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="relative bg-[#F8F9FA] dark:bg-zinc-950 w-full max-w-2xl h-full shadow-2xl overflow-y-auto"
+              className="relative bg-black/80 backdrop-blur-2xl w-full max-w-2xl h-full shadow-2xl overflow-y-auto border-l border-white/10"
             >
-              <div className="sticky top-0 bg-[#F8F9FA]/80 dark:bg-zinc-950/80 backdrop-blur-md z-10 p-6 border-b border-black/5 dark:border-white/5 flex items-center gap-4">
-                <button onClick={() => setViewingBorrowerProfile(null)} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full">
+              <div className="sticky top-0 bg-black/60 backdrop-blur-xl z-10 p-6 border-b border-white/10 flex items-center gap-4">
+                <button onClick={() => setViewingBorrowerProfile(null)} className="p-2 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition-colors">
                   <ArrowLeft size={20} />
                 </button>
-                <h3 className="text-xl font-bold">Borrower Profile</h3>
+                <h3 className="text-xl font-black text-white">Borrower Profile</h3>
               </div>
 
               <div className="p-8 space-y-8">
@@ -1157,15 +1303,19 @@ export default function App() {
                   transition={{ delay: 0.1 }}
                   className="flex items-center gap-6"
                 >
-                  <div className="w-24 h-24 rounded-3xl bg-black dark:bg-white text-white dark:text-black flex items-center justify-center text-4xl font-black">
+                  <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-[#d4af37]/30 to-[#d4af37]/10 border border-[#d4af37]/30 flex items-center justify-center text-4xl font-black text-[#d4af37] shadow-[0_0_30px_rgba(212,175,55,0.2)]">
                     {viewingBorrowerProfile.name[0]}
                   </div>
                   <div>
-                    <h2 className="text-3xl font-black">{viewingBorrowerProfile.name}</h2>
-                    <p className="text-black/40 dark:text-white/30 font-mono">Borrower ID: #{viewingBorrowerProfile.id}</p>
+                    <h2 className="text-3xl font-black text-white">{viewingBorrowerProfile.name}</h2>
+                    <p className="text-white/30 font-mono text-sm">Borrower ID: #{viewingBorrowerProfile.id}</p>
                     <div className="flex gap-2 mt-3">
-                      <Button variant="secondary" className="text-xs py-1.5"><Edit2 size={14} /> Edit</Button>
-                      <Button variant="danger" className="text-xs py-1.5"><Trash2 size={14} /> Delete</Button>
+                      <Button variant="secondary" className="text-xs py-1.5" onClick={() => { setSelectedBorrower(viewingBorrowerProfile); setShowEditBorrowerModal(true); }}>
+                        <Edit2 size={14} /> Edit
+                      </Button>
+                      <Button variant="danger" className="text-xs py-1.5" onClick={() => handleDeleteBorrower(viewingBorrowerProfile.id)}>
+                        <Trash2 size={14} /> Delete
+                      </Button>
                     </div>
                   </div>
                 </motion.div>
@@ -1177,13 +1327,39 @@ export default function App() {
                   className="grid grid-cols-2 gap-4"
                 >
                   <Card className="p-4">
-                    <p className="text-[10px] font-bold text-black/40 dark:text-white/30 uppercase tracking-widest mb-1">Phone</p>
-                    <p className="font-semibold">{viewingBorrowerProfile.phone}</p>
+                    <p className="text-[10px] font-black text-[#00e5ff] uppercase tracking-widest mb-1">Phone</p>
+                    <p className="font-semibold text-white">{viewingBorrowerProfile.phone}</p>
                   </Card>
                   <Card className="p-4">
-                    <p className="text-[10px] font-bold text-black/40 dark:text-white/30 uppercase tracking-widest mb-1">Address</p>
-                    <p className="font-semibold">{viewingBorrowerProfile.address}</p>
+                    <p className="text-[10px] font-black text-[#00e5ff] uppercase tracking-widest mb-1">Address</p>
+                    <p className="font-semibold text-white">{viewingBorrowerProfile.address}</p>
                   </Card>
+                  {viewingBorrowerProfile.notes && (
+                    <Card className="p-4 col-span-2">
+                      <p className="text-[10px] font-black text-[#00e5ff] uppercase tracking-widest mb-1">Notes</p>
+                      <p className="text-white/70 text-sm">{viewingBorrowerProfile.notes}</p>
+                    </Card>
+                  )}
+                </motion.div>
+
+                {/* Quick stats */}
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+                  {(() => {
+                    const bl = loans.filter(l => l.borrower_id === viewingBorrowerProfile.id);
+                    const activeCount = bl.filter(l => l.status === 'Active').length;
+                    const totalLent = bl.filter(l => l.direction === 'Lent').reduce((s, l) => s + (l.amount || 0), 0);
+                    const totalPaid = bl.reduce((s, l) => s + (l.paid_amount || 0), 0);
+                    return (
+                      <div className="grid grid-cols-3 gap-3">
+                        {[{ label: 'Active Loans', val: activeCount, color: '#10b981' }, { label: 'Total Lent', val: `₹${totalLent.toLocaleString('en-IN')}`, color: '#d4af37' }, { label: 'Total Paid', val: `₹${totalPaid.toLocaleString('en-IN')}`, color: '#60a5fa' }].map(s => (
+                          <div key={s.label} className="p-3 rounded-xl bg-white/5 border border-white/10 text-center">
+                            <p style={{ color: s.color }} className="text-xl font-black">{s.val}</p>
+                            <p className="text-[10px] text-white/30 mt-1 uppercase tracking-widest">{s.label}</p>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </motion.div>
 
                 <motion.div
@@ -1191,37 +1367,30 @@ export default function App() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.3 }}
                 >
-                  <h4 className="font-bold text-lg mb-4 flex items-center gap-2">
-                    <HandCoins size={20} /> Loan History
+                  <h4 className="font-black text-lg mb-4 flex items-center gap-2 text-white">
+                    <HandCoins size={20} className="text-[#d4af37]" /> Loan History
                   </h4>
                   <div className="space-y-4">
                     {loans.filter(l => l.borrower_id === viewingBorrowerProfile.id).map(loan => (
                       <Card key={loan.id} className="p-5">
                         <div className="flex justify-between items-start mb-4">
                           <div>
-                            <p className="text-xs font-bold text-black/40 dark:text-white/30 uppercase">Loan #{loan.id} • {loan.loan_type}</p>
-                            <h5 className="text-xl font-bold">₹{(loan.amount || 0).toLocaleString()}</h5>
-                            <p className="text-[10px] text-black/40 dark:text-white/30">Given: ₹{(loan.given_amount || 0).toLocaleString()}</p>
+                            <p className="text-xs font-black text-white/30 uppercase tracking-widest">Loan #{loan.id} • {loan.loan_type}</p>
+                            <h5 className="text-xl font-black text-white mt-1">₹{(loan.amount || 0).toLocaleString('en-IN')}</h5>
+                            <p className="text-[10px] text-white/30">Given: ₹{(loan.given_amount || 0).toLocaleString('en-IN')}</p>
                           </div>
-                          <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full ${loan.status === 'Active' ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' : 'bg-black/10 dark:bg-white/10 text-black/50 dark:text-white/40'}`}>
-                            {loan.status}
-                          </span>
+                          <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full border ${loan.status === 'Active' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-white/5 border-white/10 text-white/30'
+                            }`}>{loan.status}</span>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-xs mb-4">
-                          <div className="p-2 bg-black/5 dark:bg-white/5 rounded-lg">
-                            <p className="text-black/40 dark:text-white/30 mb-0.5">{loan.loan_type === 'Installment' ? 'Installment' : 'Rate'}</p>
-                            <p className="font-bold">{loan.loan_type === 'Installment' ? `₹${loan.installment_amount}` : `${loan.interest_rate}%`}</p>
-                          </div>
-                          <div className="p-2 bg-black/5 dark:bg-white/5 rounded-lg">
-                            <p className="text-black/40 dark:text-white/30 mb-0.5">Type</p>
-                            <p className="font-bold">{loan.interest_type}</p>
-                          </div>
-                          <div className="p-2 bg-black/5 dark:bg-white/5 rounded-lg">
-                            <p className="text-black/40 dark:text-white/30 mb-0.5">Start</p>
-                            <p className="font-bold">{new Date(loan.start_date).toLocaleDateString()}</p>
-                          </div>
+                          {[{ l: loan.loan_type === 'Installment' ? 'Installment' : 'Rate', v: loan.loan_type === 'Installment' ? `₹${loan.installment_amount}` : `${loan.interest_rate}%` }, { l: 'Type', v: loan.interest_type }, { l: 'Start', v: new Date(loan.start_date).toLocaleDateString() }].map(item => (
+                            <div key={item.l} className="p-2 bg-white/5 border border-white/10 rounded-lg">
+                              <p className="text-white/30 mb-0.5">{item.l}</p>
+                              <p className="font-bold text-white">{item.v}</p>
+                            </div>
+                          ))}
                         </div>
-                        <div className="flex gap-2 mt-4">
+                        <div className="flex gap-2">
                           <Button variant="secondary" className="flex-1 text-xs" onClick={() => { setSelectedLoan(loan); setShowEditLoanModal(true); }}>
                             <Edit2 size={14} /> Edit
                           </Button>
@@ -1230,9 +1399,15 @@ export default function App() {
                               Add Payment
                             </Button>
                           )}
+                          <Button variant="ghost" className="text-xs p-2 text-blue-400" onClick={async () => { setSelectedLoan(loan); await fetchPaymentHistory(loan.id); setShowPaymentHistory(true); }}>
+                            <History size={14} />
+                          </Button>
                         </div>
                       </Card>
                     ))}
+                    {loans.filter(l => l.borrower_id === viewingBorrowerProfile.id).length === 0 && (
+                      <div className="text-center py-10 text-white/20">No loans found for this borrower.</div>
+                    )}
                   </div>
                 </motion.div>
               </div>
