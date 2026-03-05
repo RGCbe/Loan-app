@@ -10,16 +10,52 @@
 
 @layer base {
   :root {
-    color-scheme: light dark;
-    transition: color-scheme 0.3s ease;
-  }
-  html {
-    transition: background-color 0.3s ease, color 0.3s ease;
-  }
-  html.dark {
     color-scheme: dark;
   }
+  
   body {
-    @apply font-sans antialiased bg-[#F8F9FA] dark:bg-zinc-950 text-black dark:text-white;
+    @apply font-sans antialiased bg-[#020202] text-white min-h-screen overflow-x-hidden;
+    /* Create an animated gradient mesh background that sits behind the app */
+    background-image: 
+      radial-gradient(ellipse at top right, rgba(0, 229, 255, 0.15), transparent 50%),
+      radial-gradient(ellipse at bottom left, rgba(255, 0, 85, 0.15), transparent 50%);
+    background-size: 150vw 150vh;
+    animation: gradientMesh 20s ease infinite alternate;
   }
+}
+
+@keyframes gradientMesh {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 100%;
+  }
+  100% {
+    background-position: 0% 0%;
+  }
+}
+
+/* Custom premium hover and glass utilities */
+.glass-panel {
+  @apply bg-[#0f0f0f]/60 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)];
+}
+
+.glass-nav {
+  @apply bg-black/40 backdrop-blur-2xl border border-white/5;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.2);
 }

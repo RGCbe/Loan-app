@@ -4,19 +4,19 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  LayoutDashboard, 
-  Users, 
-  HandCoins, 
-  History, 
-  Plus, 
-  Search, 
-  ChevronRight, 
-  Phone, 
-  MapPin, 
-  Calendar, 
-  DollarSign, 
-  TrendingUp, 
+import {
+  LayoutDashboard,
+  Users,
+  HandCoins,
+  History,
+  Plus,
+  Search,
+  ChevronRight,
+  Phone,
+  MapPin,
+  Calendar,
+  DollarSign,
+  TrendingUp,
   AlertCircle,
   X,
   Edit2,
@@ -27,7 +27,7 @@ import {
   Sun,
   Moon
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'motion/react';
 import { Borrower, Loan, Payment, Stats } from './types';
 import { FinancialVisualizer } from './components/ThreeVisuals';
 
@@ -35,18 +35,63 @@ import { FinancialVisualizer } from './components/ThreeVisuals';
 
 const Card = ({ children, className = "", onClick, noHover = false }: { children: React.ReactNode, className?: string, key?: React.Key, onClick?: () => void, noHover?: boolean }) => {
   const hasCustomBg = className.includes('bg-');
-  
+
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+
+  const mouseXSpring = useSpring(x);
+  const mouseYSpring = useSpring(y);
+
+  const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["12deg", "-12deg"]);
+  const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-12deg", "12deg"]);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
+    if (noHover) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+
+    // Smooth boundaries and calculate percentage from center (-0.5 to 0.5)
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const xPct = mouseX / width - 0.5;
+    const yPct = mouseY / height - 0.5;
+
+    x.set(xPct);
+    y.set(yPct);
+  };
+
+  const handleMouseLeave = () => {
+    if (noHover) return;
+    x.set(0);
+    y.set(0);
+  };
+
   return (
-    <motion.div 
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "0px" }}
-      whileHover={noHover ? {} : { y: -5, transition: { duration: 0.2 } }}
-      onClick={onClick}
-      className={`rounded-2xl border border-black/5 dark:border-white/5 shadow-sm overflow-hidden ${!hasCustomBg ? 'bg-white dark:bg-zinc-900' : ''} ${className} ${onClick ? 'cursor-pointer' : ''}`}
-    >
-      {children}
-    </motion.div>
+    <div style={{ perspective: "1500px", transformStyle: "preserve-3d" }} className="h-full w-full">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "0px" }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        style={{
+          rotateX: noHover ? 0 : rotateX,
+          rotateY: noHover ? 0 : rotateY,
+          transformStyle: "preserve-3d"
+        }}
+        onClick={onClick}
+        className={`relative rounded-2xl transition-shadow duration-300 ${!hasCustomBg ? 'glass-panel' : ''} ${className} ${onClick ? 'cursor-pointer' : ''}`}
+      >
+        <div
+          style={{ transform: noHover ? "none" : "translateZ(40px)" }}
+          className="h-full w-full flex flex-col justify-between"
+        >
+          {children}
+        </div>
+      </motion.div>
+    </div>
   );
 };
 
@@ -70,34 +115,34 @@ const FadeIn = ({ children, delay = 0, direction = 'up' }: { children: React.Rea
   );
 };
 
-const Button = ({ 
-  children, 
-  onClick, 
-  variant = 'primary', 
-  className = "", 
+const Button = ({
+  children,
+  onClick,
+  variant = 'primary',
+  className = "",
   type = "button",
   disabled = false
-}: { 
-  children: React.ReactNode, 
-  onClick?: () => void, 
+}: {
+  children: React.ReactNode,
+  onClick?: () => void,
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost',
   className?: string,
   type?: "button" | "submit" | "reset",
   disabled?: boolean
 }) => {
   const variants = {
-    primary: 'bg-black dark:bg-white text-white dark:text-black hover:bg-black/90 dark:hover:bg-white/90',
-    secondary: 'bg-white dark:bg-zinc-800 text-black dark:text-white border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5',
-    danger: 'bg-red-500 text-white hover:bg-red-600',
-    ghost: 'bg-transparent text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/5'
+    primary: 'bg-gradient-to-r from-[#00e5ff]/80 to-[#ff0055]/80 text-white border border-white/20 shadow-[0_0_15px_rgba(0,229,255,0.3)] hover:shadow-[0_0_25px_rgba(255,0,85,0.5)]',
+    secondary: 'glass-panel text-white hover:bg-white/10 hover:border-white/20',
+    danger: 'bg-red-500/80 text-white backdrop-blur-md border border-red-400/50 shadow-[0_0_15px_rgba(239,68,68,0.4)] hover:bg-red-500',
+    ghost: 'bg-transparent text-white/70 hover:bg-white/10 hover:text-white'
   };
 
   return (
-    <button 
+    <button
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`px-4 py-2 rounded-xl font-medium transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 ${variants[variant]} ${className}`}
+      className={`px-4 py-2.5 rounded-xl font-bold transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 ${variants[variant]} ${className}`}
     >
       {children}
     </button>
@@ -106,22 +151,22 @@ const Button = ({
 
 const Input = ({ label, ...props }: { label?: string } & React.InputHTMLAttributes<HTMLInputElement>) => (
   <div className="flex flex-col gap-1.5 w-full">
-    {label && <label className="text-xs font-semibold uppercase tracking-wider text-black/50 dark:text-white/40 ml-1">{label}</label>}
-    <input 
+    {label && <label className="text-[10px] font-black uppercase tracking-[0.15em] text-[#00e5ff] drop-shadow-[0_0_5px_rgba(0,229,255,0.3)] ml-1">{label}</label>}
+    <input
       {...props}
-      className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 transition-all bg-white dark:bg-zinc-800 text-black dark:text-white"
+      className="w-full px-4 py-3 rounded-xl border border-white/10 focus:border-[#00e5ff]/50 focus:outline-none focus:ring-2 focus:ring-[#00e5ff]/20 transition-all bg-black/40 backdrop-blur-md text-white shadow-inner placeholder:text-white/20"
     />
   </div>
 );
 
 const Select = ({ label, options, ...props }: { label?: string, options: { value: string, label: string }[] } & React.SelectHTMLAttributes<HTMLSelectElement>) => (
   <div className="flex flex-col gap-1.5 w-full">
-    {label && <label className="text-xs font-semibold uppercase tracking-wider text-black/50 dark:text-white/40 ml-1">{label}</label>}
-    <select 
+    {label && <label className="text-[10px] font-black uppercase tracking-[0.15em] text-[#00e5ff] drop-shadow-[0_0_5px_rgba(0,229,255,0.3)] ml-1">{label}</label>}
+    <select
       {...props}
-      className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 transition-all bg-white dark:bg-zinc-800 text-black dark:text-white appearance-none"
+      className="w-full px-4 py-3 rounded-xl border border-white/10 focus:border-[#00e5ff]/50 focus:outline-none focus:ring-2 focus:ring-[#00e5ff]/20 transition-all bg-black/40 backdrop-blur-md text-white shadow-inner appearance-none cursor-pointer"
     >
-      {options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+      {options.map(opt => <option key={opt.value} value={opt.value} className="bg-zinc-900 text-white">{opt.label}</option>)}
     </select>
   </div>
 );
@@ -134,27 +179,14 @@ export default function App() {
   const [borrowers, setBorrowers] = useState<Borrower[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('darkMode');
-      if (saved !== null) return saved === 'true';
-      return window.matchMedia('(prefers-color-scheme: dark)').matches;
-    }
-    return false;
-  });
+  const [darkMode, setDarkMode] = useState(true);
 
   useEffect(() => {
     const root = document.documentElement;
-    if (darkMode) {
-      root.classList.add('dark');
-      root.style.setProperty('color-scheme', 'dark');
-    } else {
-      root.classList.remove('dark');
-      root.style.setProperty('color-scheme', 'light');
-    }
-    localStorage.setItem('darkMode', String(darkMode));
-  }, [darkMode]);
-  
+    root.classList.add('dark');
+    root.style.setProperty('color-scheme', 'dark');
+  }, []);
+
   // Modal states
   const [showBorrowerModal, setShowBorrowerModal] = useState(false);
   const [showLoanModal, setShowLoanModal] = useState(false);
@@ -195,13 +227,13 @@ export default function App() {
     setLoans(data);
   };
 
-  const filteredBorrowers = borrowers.filter(b => 
-    b.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  const filteredBorrowers = borrowers.filter(b =>
+    b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     b.phone.includes(searchQuery)
   );
 
-  const filteredLoans = loans.filter(l => 
-    l.borrower_name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  const filteredLoans = loans.filter(l =>
+    l.borrower_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     l.id.toString().includes(searchQuery)
   );
 
@@ -211,13 +243,13 @@ export default function App() {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData.entries());
-    
+
     await fetch('/api/borrowers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    
+
     setShowBorrowerModal(false);
     fetchBorrowers();
   };
@@ -226,7 +258,7 @@ export default function App() {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData.entries());
-    
+
     await fetch('/api/loans', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -239,7 +271,7 @@ export default function App() {
         duration: data.duration ? Number(data.duration) : null
       })
     });
-    
+
     setShowLoanModal(false);
     fetchLoans();
     fetchStats();
@@ -249,7 +281,7 @@ export default function App() {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData.entries());
-    
+
     await fetch('/api/payments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -258,7 +290,7 @@ export default function App() {
         amount: Number(data.amount)
       })
     });
-    
+
     setShowPaymentModal(false);
     setSelectedLoan(null);
     fetchLoans();
@@ -271,10 +303,10 @@ export default function App() {
   const handleEditLoan = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedLoan) return;
-    
+
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData.entries());
-    
+
     await fetch(`/api/loans/${selectedLoan.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -288,7 +320,7 @@ export default function App() {
         status: data.status
       })
     });
-    
+
     setShowEditLoanModal(false);
     setSelectedLoan(null);
     fetchLoans();
@@ -310,13 +342,13 @@ export default function App() {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const amount = Number(formData.get('amount'));
-    
+
     await fetch('/api/capital', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount })
     });
-    
+
     setShowCapitalModal(false);
     fetchStats();
   };
@@ -328,176 +360,161 @@ export default function App() {
     const remainingCapital = stats.investedCapital - stats.totalGiven;
 
     return (
-      <motion.div 
+      <motion.div
         initial="hidden"
         animate="visible"
         variants={{
-          visible: { transition: { staggerChildren: 0.05 } }
+          hidden: { opacity: 0 },
+          visible: { opacity: 1, transition: { staggerChildren: 0.15, delayChildren: 0.1 } }
         }}
-        className="space-y-6"
+        className="space-y-10 max-w-6xl mx-auto py-8"
       >
-        <motion.div variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}>
+        <motion.div
+          variants={{ hidden: { opacity: 0, scale: 0.9, y: 20 }, visible: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", bounce: 0.4, duration: 0.8 } } }}
+          className="relative z-10"
+        >
           <FinancialVisualizer lent={stats.totalGiven} borrowed={stats.totalBorrowed} capital={stats.investedCapital} />
         </motion.div>
-        
-        <motion.div 
-          variants={{
-            hidden: { opacity: 0 },
-            visible: { opacity: 1, transition: { staggerChildren: 0.05 } }
-          }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
-        >
-          <Card className="p-6 bg-black dark:bg-white text-white dark:text-black relative group cursor-pointer" onClick={() => setShowCapitalModal(true)}>
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-white/60 dark:text-black/60 text-[10px] font-bold uppercase tracking-widest">Total Capital</p>
-                <h2 className="text-2xl font-black mt-1">₹{(stats.investedCapital || 0).toLocaleString()}</h2>
-              </div>
-              <div className="p-2 bg-white/10 dark:bg-black/10 rounded-lg group-hover:bg-white/20 dark:group-hover:bg-black/20 transition-colors">
-                <TrendingUp size={20} />
-              </div>
-            </div>
-            <div className="mt-4 flex items-center gap-2">
-              <div className="flex-1 h-1 bg-white/10 dark:bg-black/10 rounded-full overflow-hidden">
-                <motion.div 
-                  initial={{ width: 0 }}
-                  whileInView={{ width: `${Math.min(utilization, 100)}%` }}
-                  transition={{ duration: 1, ease: "easeOut" }}
-                  className="h-full bg-emerald-400" 
-                />
-              </div>
-              <span className="text-[10px] font-bold">{utilization.toFixed(1)}% Used</span>
-            </div>
-            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-              <Edit2 size={12} />
-            </div>
-          </Card>
 
-          <Card className="p-6">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-black/50 dark:text-white/40 text-[10px] font-bold uppercase tracking-widest">Currently Lent</p>
-                <h2 className="text-2xl font-bold mt-1">₹{(stats.totalGiven || 0).toLocaleString()}</h2>
-              </div>
-              <div className="p-2 bg-black/5 dark:bg-white/5 rounded-lg">
-                <HandCoins size={20} />
-              </div>
-            </div>
-            <p className="mt-2 text-[10px] text-black/40 dark:text-white/30 font-medium">Available: ₹{(remainingCapital || 0).toLocaleString()}</p>
-          </Card>
-
-          <Card className="p-6">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-black/50 dark:text-white/40 text-[10px] font-bold uppercase tracking-widest">Total Collected</p>
-                <h2 className="text-2xl font-bold mt-1">₹{(stats.totalCollected || 0).toLocaleString()}</h2>
-              </div>
-              <div className="p-2 bg-emerald-50 dark:bg-emerald-500/10 rounded-lg">
-                <TrendingUp size={20} className="text-emerald-500" />
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-6 bg-red-50 dark:bg-red-500/10 border-red-100 dark:border-red-500/20">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-red-400 dark:text-red-300 text-[10px] font-bold uppercase tracking-widest">My Borrowings</p>
-                <h2 className="text-2xl font-bold mt-1 text-red-600 dark:text-red-400">₹{(stats.totalBorrowed || 0).toLocaleString()}</h2>
-              </div>
-              <div className="p-2 bg-red-100 dark:bg-red-500/20 rounded-lg">
-                <AlertCircle size={20} className="text-red-500" />
-              </div>
-            </div>
-          </Card>
-        </motion.div>
-
-        <motion.div 
+        <motion.div
           variants={{
             hidden: { opacity: 0 },
             visible: { opacity: 1, transition: { staggerChildren: 0.1 } }
           }}
-          className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+          className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-8 px-2 sm:px-4"
         >
-          <Card className="p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-bold text-lg">Recent Transactions</h3>
-              <Button variant="ghost" className="text-sm" onClick={() => setActiveTab('loans')}>View All</Button>
-            </div>
-            <div className="space-y-4">
-              {loans.slice(0, 5).map((loan, idx) => (
-                <motion.div 
-                  key={loan.id} 
-                  initial={{ opacity: 0, x: -20 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  transition={{ delay: idx * 0.05 }}
-                  viewport={{ once: true }}
-                  className="flex items-center justify-between p-3 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-colors cursor-pointer" 
-                  onClick={() => { setSelectedLoan(loan); setShowPaymentModal(true); }}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${loan.direction === 'Borrowed' ? 'bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400' : 'bg-black/5 dark:bg-white/5 text-black/40 dark:text-white/40'}`}>
-                      {loan.borrower_name?.[0]}
-                    </div>
-                    <div>
-                      <p className="font-semibold">{loan.borrower_name}</p>
-                      <p className="text-[10px] font-bold uppercase text-black/40 dark:text-white/30">
-                        {loan.direction === 'Borrowed' ? 'I Borrowed' : 'I Lent'} • {loan.interest_type}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className={`font-bold ${loan.direction === 'Borrowed' ? 'text-red-600 dark:text-red-400' : ''}`}>₹{(loan.amount || 0).toLocaleString()}</p>
-                    <p className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full inline-block ${loan.status === 'Active' ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' : 'bg-black/10 dark:bg-white/10 text-black/50 dark:text-white/40'}`}>
-                      {loan.status}
-                    </p>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </Card>
+          {/* Card 1: Capital */}
+          <motion.div whileHover={{ scale: 1.03, y: -5, rotate: -1 }} whileTap={{ scale: 0.97 }} variants={{ hidden: { opacity: 0, y: 30 }, visible: { opacity: 1, y: 0, transition: { type: "spring", bounce: 0.5 } } }}>
+            <Card className="p-5 lg:p-8 bg-gradient-to-br from-black to-zinc-800 dark:from-white dark:to-zinc-200 text-white dark:text-black h-full flex flex-col justify-between shadow-2xl cursor-pointer" onClick={() => setShowCapitalModal(true)} noHover>
+              <div className="flex flex-col sm:flex-row lg:flex-col xl:flex-row justify-between items-start gap-4">
+                <div className="p-3 lg:p-4 bg-white/10 dark:bg-black/10 rounded-2xl backdrop-blur-sm self-start">
+                  <TrendingUp className="w-6 h-6 lg:w-8 lg:h-8" />
+                </div>
+                <div className="w-full sm:w-auto lg:w-full xl:w-auto sm:text-right lg:text-left xl:text-right">
+                  <p className="text-white/60 dark:text-black/60 text-[10px] lg:text-xs font-bold uppercase tracking-widest break-words leading-tight">Total Capital</p>
+                  <h2 className="text-3xl lg:text-4xl xl:text-5xl font-black mt-1 lg:mt-2 tracking-tight truncate">₹{(stats.investedCapital || 0).toLocaleString()}</h2>
+                </div>
+              </div>
+              <div className="mt-6 lg:mt-10 flex items-center gap-2 lg:gap-4">
+                <div className="flex-1 h-3 bg-white/10 dark:bg-black/10 rounded-full overflow-hidden shadow-inner">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    whileInView={{ width: `${Math.min(utilization, 100)}%` }}
+                    transition={{ duration: 1.5, type: "spring", bounce: 0.2, delay: 0.5 }}
+                    className="h-full bg-gradient-to-r from-emerald-400 to-emerald-300"
+                  />
+                </div>
+                <span className="text-xs sm:text-sm font-bold bg-white/20 dark:bg-black/20 px-2 sm:px-3 py-1 rounded-lg backdrop-blur-md whitespace-nowrap">{utilization.toFixed(1)}% Used</span>
+              </div>
+            </Card>
+          </motion.div>
 
-          <Card className="p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-bold text-lg">Quick Actions</h3>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <motion.button 
-                whileHover={{ scale: 1.02, y: -2 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setShowBorrowerModal(true)}
-                className="p-4 rounded-2xl border border-black/10 dark:border-white/10 hover:border-black dark:hover:border-white hover:bg-black/5 dark:hover:bg-white/5 transition-all text-left flex flex-col gap-3 cursor-pointer"
+          {/* Card 2: Lent */}
+          <motion.div whileHover={{ scale: 1.03, y: -5, rotate: 1 }} whileTap={{ scale: 0.97 }} variants={{ hidden: { opacity: 0, y: 30 }, visible: { opacity: 1, y: 0, transition: { type: "spring", bounce: 0.5 } } }}>
+            <Card className="p-5 lg:p-8 h-full flex flex-col justify-between bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/30 dark:to-blue-900/30 border-indigo-100/50 dark:border-indigo-500/20 shadow-xl" noHover>
+              <div className="flex flex-col sm:flex-row lg:flex-col xl:flex-row justify-between items-start gap-4">
+                <div className="p-3 lg:p-4 bg-white dark:bg-indigo-500/20 rounded-2xl text-indigo-600 dark:text-indigo-400 shadow-sm border border-black/5 dark:border-white/5 self-start">
+                  <HandCoins className="w-6 h-6 lg:w-8 lg:h-8" />
+                </div>
+                <div className="w-full sm:w-auto lg:w-full xl:w-auto sm:text-right lg:text-left xl:text-right">
+                  <p className="text-indigo-600/60 dark:text-indigo-400/60 text-[10px] lg:text-xs font-bold uppercase tracking-widest break-words leading-tight">Currently Lent</p>
+                  <h2 className="text-3xl lg:text-4xl xl:text-5xl font-black mt-1 lg:mt-2 text-indigo-900 dark:text-indigo-100 tracking-tight truncate">₹{(stats.totalGiven || 0).toLocaleString()}</h2>
+                </div>
+              </div>
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.8 }}
+                className="mt-6 lg:mt-10"
               >
-                <div className="w-10 h-10 rounded-xl bg-black dark:bg-white text-white dark:text-black flex items-center justify-center">
-                  <Plus size={20} />
+                <p className="text-xs sm:text-sm text-indigo-600/80 dark:text-indigo-400/80 font-bold bg-white/60 dark:bg-indigo-500/10 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl inline-flex items-center gap-1.5 sm:gap-2 shadow-sm border border-white/40 dark:border-indigo-500/20 flex-wrap">
+                  <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-indigo-500 animate-pulse shrink-0" /> <span className="truncate">Available: ₹{(remainingCapital || 0).toLocaleString()}</span>
+                </p>
+              </motion.div>
+            </Card>
+          </motion.div>
+
+          {/* Card 3: Collected */}
+          <motion.div whileHover={{ scale: 1.03, y: -5, rotate: -1 }} whileTap={{ scale: 0.97 }} variants={{ hidden: { opacity: 0, y: 30 }, visible: { opacity: 1, y: 0, transition: { type: "spring", bounce: 0.5 } } }}>
+            <Card className="p-5 lg:p-8 h-full flex flex-col justify-between bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/30 dark:to-teal-900/30 border-emerald-100/50 dark:border-emerald-500/20 shadow-xl" noHover>
+              <div className="flex flex-col sm:flex-row lg:flex-col xl:flex-row justify-between items-start gap-4">
+                <div className="p-3 lg:p-4 bg-white dark:bg-emerald-500/20 rounded-2xl text-emerald-600 dark:text-emerald-400 shadow-sm border border-black/5 dark:border-white/5 self-start">
+                  <TrendingUp className="w-6 h-6 lg:w-8 lg:h-8" />
                 </div>
-                <div>
-                  <p className="font-bold">Add Borrower</p>
-                  <p className="text-xs text-black/40 dark:text-white/30">Register a new client</p>
+                <div className="w-full sm:w-auto lg:w-full xl:w-auto sm:text-right lg:text-left xl:text-right">
+                  <p className="text-emerald-600/60 dark:text-emerald-400/60 text-[10px] lg:text-xs font-bold uppercase tracking-widest break-words leading-tight">Total Collected</p>
+                  <h2 className="text-3xl lg:text-4xl xl:text-5xl font-black mt-1 lg:mt-2 text-emerald-900 dark:text-emerald-100 tracking-tight truncate">₹{(stats.totalCollected || 0).toLocaleString()}</h2>
                 </div>
-              </motion.button>
-              <motion.button 
-                whileHover={{ scale: 1.02, y: -2 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setShowLoanModal(true)}
-                className="p-4 rounded-2xl border border-black/10 dark:border-white/10 hover:border-black dark:hover:border-white hover:bg-black/5 dark:hover:bg-white/5 transition-all text-left flex flex-col gap-3 cursor-pointer"
-              >
-                <div className="w-10 h-10 rounded-xl bg-black dark:bg-white text-white dark:text-black flex items-center justify-center">
-                  <HandCoins size={20} />
-                </div>
-                <div>
-                  <p className="font-bold">Create Loan</p>
-                  <p className="text-xs text-black/40 dark:text-white/30">Issue a new loan</p>
-                </div>
-              </motion.button>
+              </div>
+              <div className="mt-6 lg:mt-10 flex gap-1.5 sm:gap-2">
+                {[...Array(3)].map((_, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, scale: 0 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.8 + (i * 0.1), type: "spring" }}
+                    className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-emerald-200/50 dark:bg-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 border border-emerald-300/30 dark:border-emerald-500/30 shrink-0"
+                  >
+                    <DollarSign className="w-3 h-3 sm:w-4 sm:h-4" />
+                  </motion.div>
+                ))}
+              </div>
+            </Card>
+          </motion.div>
+        </motion.div>
+
+        {/* Action Buttons as giant, animated floating pills */}
+        <motion.div
+          variants={{
+            hidden: { opacity: 0, y: 40 },
+            visible: { opacity: 1, y: 0, transition: { delay: 0.6, staggerChildren: 0.15, type: "spring", bounce: 0.4 } }
+          }}
+          className="flex flex-col sm:flex-row justify-center items-center gap-6 mt-16 px-4 pb-8"
+        >
+          <motion.button
+            whileHover={{ scale: 1.05, y: -8, boxShadow: "0 25px 50px -12px rgb(0 0 0 / 0.15)" }}
+            whileTap={{ scale: 0.95 }}
+            variants={{ hidden: { opacity: 0, scale: 0.8 }, visible: { opacity: 1, scale: 1 } }}
+            onClick={() => setShowBorrowerModal(true)}
+            className="w-full sm:w-auto px-8 py-5 rounded-[2rem] bg-white dark:bg-zinc-800 border border-black/5 dark:border-white/5 shadow-xl flex items-center gap-5 group"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-black dark:bg-white text-white dark:text-black flex items-center justify-center group-hover:rotate-90 transition-transform duration-500 shadow-md">
+              <Plus size={28} />
             </div>
-          </Card>
+            <div className="text-left pr-4">
+              <p className="font-black text-xl">Add Borrower</p>
+              <p className="text-sm font-medium text-black/40 dark:text-white/30">Register New Client</p>
+            </div>
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.05, y: -8, boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)" }}
+            whileTap={{ scale: 0.95 }}
+            variants={{ hidden: { opacity: 0, scale: 0.8 }, visible: { opacity: 1, scale: 1 } }}
+            onClick={() => setShowLoanModal(true)}
+            className="w-full sm:w-auto px-8 py-5 rounded-[2rem] bg-black dark:bg-white text-white dark:text-black border border-black/10 dark:border-white/10 shadow-xl flex items-center gap-5 group relative overflow-hidden"
+          >
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 dark:via-black/10 to-transparent -skew-x-12"
+              initial={{ x: '-100%' }}
+              whileHover={{ x: '200%' }}
+              transition={{ duration: 0.8, ease: "easeInOut" }}
+            />
+            <div className="w-14 h-14 rounded-2xl bg-white/20 dark:bg-black/20 flex items-center justify-center group-hover:-rotate-12 transition-transform duration-500 shadow-inner relative z-10">
+              <HandCoins size={28} />
+            </div>
+            <div className="text-left pr-4 relative z-10">
+              <p className="font-black text-xl">Create Loan</p>
+              <p className="text-sm font-medium text-white/60 dark:text-black/60">Issue New Funds</p>
+            </div>
+          </motion.button>
         </motion.div>
       </motion.div>
     );
   };
 
   const BorrowersView = () => (
-    <motion.div 
+    <motion.div
       initial="hidden"
       animate="visible"
       variants={{
@@ -507,12 +524,12 @@ export default function App() {
     >
       <FadeIn direction="down">
         <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
-          <div className="relative w-full md:w-96">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-black/30 dark:text-white/20" size={18} />
-            <input 
-              type="text" 
-              placeholder="Search by name or phone..." 
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 bg-white dark:bg-zinc-900 text-black dark:text-white"
+          <div className="relative w-full md:w-96 group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 group-focus-within:text-[#00e5ff] transition-colors" size={18} />
+            <input
+              type="text"
+              placeholder="Search by name or phone..."
+              className="w-full pl-10 pr-4 py-3 rounded-xl border border-white/10 focus:border-[#00e5ff]/50 focus:outline-none focus:ring-2 focus:ring-[#00e5ff]/20 bg-black/40 backdrop-blur-md text-white shadow-inner transition-all"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -525,29 +542,35 @@ export default function App() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {filteredBorrowers.map(borrower => (
-          <Card key={borrower.id} className="p-5 hover:border-black/20 dark:hover:border-white/20 transition-all group">
+          <Card key={borrower.id} className="p-5 hover:border-white/20 transition-all group">
             <div className="flex justify-between items-start mb-4">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-black/5 dark:bg-white/5 flex items-center justify-center text-xl font-bold text-black/30 dark:text-white/20">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-white/10 to-white/5 border border-white/10 flex items-center justify-center text-xl font-black text-[#d4af37] shadow-[0_0_15px_rgba(212,175,55,0.2)]">
                   {borrower.name[0]}
                 </div>
                 <div>
-                  <h4 className="font-bold text-lg">{borrower.name}</h4>
-                  <p className="text-xs text-black/40 dark:text-white/30">ID: #{borrower.id}</p>
+                  <h4 className="font-bold text-lg text-white">{borrower.name}</h4>
+                  <p className="text-xs text-white/30 font-mono">ID #{borrower.id}</p>
                 </div>
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg text-black/50 dark:text-white/40"><Edit2 size={16} /></button>
-                <button className="p-2 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg text-red-500"><Trash2 size={16} /></button>
+                <button className="p-2 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-all"><Edit2 size={16} /></button>
+                <button className="p-2 hover:bg-red-500/20 rounded-lg text-red-400 hover:text-red-300 transition-all"><Trash2 size={16} /></button>
               </div>
             </div>
-            
-            <div className="space-y-2 mb-6">
-              <div className="flex items-center gap-2 text-sm text-black/60 dark:text-white/50">
-                <Phone size={14} /> {borrower.phone}
+
+            <div className="space-y-2 mb-5">
+              <div className="flex items-center gap-2.5 text-sm text-white/50">
+                <div className="w-6 h-6 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center">
+                  <Phone size={10} className="text-[#00e5ff]" />
+                </div>
+                {borrower.phone}
               </div>
-              <div className="flex items-center gap-2 text-sm text-black/60 dark:text-white/50">
-                <MapPin size={14} /> {borrower.address}
+              <div className="flex items-center gap-2.5 text-sm text-white/50">
+                <div className="w-6 h-6 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center">
+                  <MapPin size={10} className="text-[#00e5ff]" />
+                </div>
+                {borrower.address}
               </div>
             </div>
 
@@ -561,7 +584,7 @@ export default function App() {
   );
 
   const LoansView = () => (
-    <motion.div 
+    <motion.div
       initial="hidden"
       animate="visible"
       variants={{
@@ -571,12 +594,12 @@ export default function App() {
     >
       <FadeIn direction="down">
         <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
-          <div className="relative w-full md:w-96">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-black/30 dark:text-white/20" size={18} />
-            <input 
-              type="text" 
-              placeholder="Search by borrower or ID..." 
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 bg-white dark:bg-zinc-900 text-black dark:text-white"
+          <div className="relative w-full md:w-96 group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 group-focus-within:text-[#00e5ff] transition-colors" size={18} />
+            <input
+              type="text"
+              placeholder="Search by borrower or ID..."
+              className="w-full pl-10 pr-4 py-3 rounded-xl border border-white/10 focus:border-[#00e5ff]/50 focus:outline-none focus:ring-2 focus:ring-[#00e5ff]/20 bg-black/40 backdrop-blur-md text-white shadow-inner transition-all"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -587,75 +610,78 @@ export default function App() {
         </div>
       </FadeIn>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-separate border-spacing-y-2">
+      <div className="overflow-x-auto rounded-2xl border border-white/10">
+        <table className="w-full text-left">
           <thead>
-            <tr className="text-xs font-bold uppercase tracking-wider text-black/40 dark:text-white/30">
-              <th className="px-4 py-2">Loan ID</th>
-              <th className="px-4 py-2">Borrower</th>
-              <th className="px-4 py-2">Repay/Given</th>
-              <th className="px-4 py-2">Type</th>
-              <th className="px-4 py-2">Interest/Inst.</th>
-              <th className="px-4 py-2">Start Date</th>
-              <th className="px-4 py-2">Status</th>
-              <th className="px-4 py-2 text-right">Actions</th>
+            <tr className="text-[10px] font-black uppercase tracking-widest text-white/30 bg-white/5">
+              <th className="px-4 py-3.5">Loan ID</th>
+              <th className="px-4 py-3.5">Borrower</th>
+              <th className="px-4 py-3.5">Repay / Given</th>
+              <th className="px-4 py-3.5">Type</th>
+              <th className="px-4 py-3.5">Rate / Inst.</th>
+              <th className="px-4 py-3.5">Start Date</th>
+              <th className="px-4 py-3.5">Status</th>
+              <th className="px-4 py-3.5 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-white/5">
             {filteredLoans.map((loan, idx) => (
-              <motion.tr 
-                key={loan.id} 
+              <motion.tr
+                key={loan.id}
                 initial={{ opacity: 0, y: 10 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.03 }}
                 viewport={{ once: true }}
-                className="bg-white dark:bg-zinc-900 group"
+                className="hover:bg-white/5 transition-colors group"
               >
-                <td className="px-4 py-4 rounded-l-2xl border-y border-l border-black/5 dark:border-white/5 font-mono text-sm">#{loan.id}</td>
-                <td className="px-4 py-4 border-y border-black/5 dark:border-white/5 font-semibold">{loan.borrower_name}</td>
-                <td className="px-4 py-4 border-y border-black/5 dark:border-white/5">
-                  <div className="font-bold">₹{(loan.amount || 0).toLocaleString()}</div>
-                  <div className="text-[10px] text-black/40 dark:text-white/30">Given: ₹{(loan.given_amount || 0).toLocaleString()}</div>
-                  <div className={`text-[9px] font-black uppercase mt-1 ${loan.direction === 'Borrowed' ? 'text-red-500 dark:text-red-400' : 'text-emerald-500 dark:text-emerald-400'}`}>
+                <td className="px-4 py-4 font-mono text-sm text-white/40">#{loan.id}</td>
+                <td className="px-4 py-4 font-semibold text-white">{loan.borrower_name}</td>
+                <td className="px-4 py-4">
+                  <div className="font-bold text-white">₹{(loan.amount || 0).toLocaleString()}</div>
+                  <div className="text-[10px] text-white/30">Given: ₹{(loan.given_amount || 0).toLocaleString()}</div>
+                  <div className={`text-[9px] font-black uppercase mt-1 ${loan.direction === 'Borrowed' ? 'text-rose-400' : 'text-emerald-400'}`}>
                     {loan.direction === 'Borrowed' ? 'I Borrowed' : 'I Lent'}
                   </div>
                 </td>
-                <td className="px-4 py-4 border-y border-black/5 dark:border-white/5">
-                  <span className="text-[10px] font-bold uppercase px-2 py-1 bg-black/5 dark:bg-white/5 rounded-lg">
+                <td className="px-4 py-4">
+                  <span className="text-[10px] font-bold uppercase px-2.5 py-1 bg-white/5 border border-white/10 rounded-lg text-white/60">
                     {loan.loan_type}
                   </span>
                 </td>
-                <td className="px-4 py-4 border-y border-black/5 dark:border-white/5">
+                <td className="px-4 py-4">
                   {loan.loan_type === 'Installment' ? (
-                    <div className="text-xs font-medium">₹{loan.installment_amount}/ {loan.interest_type.replace('ly', '')}</div>
+                    <div className="text-xs font-medium text-white/70">₹{loan.installment_amount}/ {loan.interest_type.replace('ly', '')}</div>
                   ) : (
-                    <span className="text-xs font-medium px-2 py-1 bg-black/5 dark:bg-white/5 rounded-lg">
+                    <span className="text-xs font-medium px-2.5 py-1 bg-[#d4af37]/10 border border-[#d4af37]/20 rounded-lg text-[#d4af37]">
                       {loan.interest_rate}% {loan.interest_type}
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-4 border-y border-black/5 dark:border-white/5 text-sm text-black/50 dark:text-white/40">{new Date(loan.start_date).toLocaleDateString()}</td>
-                <td className="px-4 py-4 border-y border-black/5 dark:border-white/5">
-                  <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full ${loan.status === 'Active' ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' : 'bg-black/10 dark:bg-white/10 text-black/50 dark:text-white/40'}`}>
+                <td className="px-4 py-4 text-sm text-white/40">{new Date(loan.start_date).toLocaleDateString()}</td>
+                <td className="px-4 py-4">
+                  <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full border ${loan.status === 'Active'
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                    : 'bg-white/5 border-white/10 text-white/30'
+                    }`}>
                     {loan.status}
                   </span>
                 </td>
-                <td className="px-4 py-4 rounded-r-2xl border-y border-r border-black/5 dark:border-white/5 text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button variant="ghost" className="text-xs p-2" onClick={() => { setSelectedLoan(loan); setShowEditLoanModal(true); }}>
-                        <Edit2 size={14} />
+                <td className="px-4 py-4 text-right">
+                  <div className="flex justify-end gap-2">
+                    <Button variant="ghost" className="text-xs p-2" onClick={() => { setSelectedLoan(loan); setShowEditLoanModal(true); }}>
+                      <Edit2 size={14} />
+                    </Button>
+                    {loan.status === 'Active' && (
+                      <Button variant="ghost" className="text-xs p-2" onClick={() => { setSelectedLoan(loan); setShowPaymentModal(true); }}>
+                        Payment
                       </Button>
-                      {loan.status === 'Active' && (
-                        <Button variant="ghost" className="text-xs p-2" onClick={() => { setSelectedLoan(loan); setShowPaymentModal(true); }}>
-                          Payment
-                        </Button>
-                      )}
-                      {loan.status === 'Active' && (
-                        <Button variant="ghost" className="text-xs p-2" onClick={() => handleCloseLoan(loan.id)}>
-                          Close
-                        </Button>
-                      )}
-                    </div>
+                    )}
+                    {loan.status === 'Active' && (
+                      <Button variant="ghost" className="text-xs p-2" onClick={() => handleCloseLoan(loan.id)}>
+                        Close
+                      </Button>
+                    )}
+                  </div>
                 </td>
               </motion.tr>
             ))}
@@ -678,93 +704,112 @@ export default function App() {
     }, [loans]);
 
     return (
-      <motion.div 
+      <motion.div
         initial="hidden"
         animate="visible"
-        variants={{
-          visible: { transition: { staggerChildren: 0.05 } }
-        }}
+        variants={{ visible: { transition: { staggerChildren: 0.08 } } }}
         className="space-y-6"
       >
         <FadeIn direction="down">
-          <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold">Financial Summary (Lent)</h2>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[#d4af37] to-white">Financial Summary</h2>
+              <p className="text-sm text-white/40 mt-1">Lent portfolio performance overview</p>
+            </div>
             <Button variant="secondary">
-              <Download size={18} /> Export CSV
+              <Download size={16} /> Export CSV
             </Button>
           </div>
         </FadeIn>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="p-5">
-            <p className="text-xs font-bold text-black/40 dark:text-white/30 uppercase tracking-widest mb-1">Total Principal</p>
-            <p className="text-2xl font-bold">₹{(reportData.totalAmount || 0).toLocaleString()}</p>
-          </Card>
-          <Card className="p-5">
-            <p className="text-xs font-bold text-black/40 dark:text-white/30 uppercase tracking-widest mb-1">Total Interest</p>
-            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">₹{(reportData.totalInterest || 0).toLocaleString()}</p>
-          </Card>
-          <Card className="p-5">
-            <p className="text-xs font-bold text-black/40 dark:text-white/30 uppercase tracking-widest mb-1">Total Received</p>
-            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">₹{(reportData.totalPaid || 0).toLocaleString()}</p>
-          </Card>
-          <Card className="p-5 bg-red-50 dark:bg-red-500/10 border-red-100 dark:border-red-500/20">
-            <p className="text-xs font-bold text-red-400 dark:text-red-300 uppercase tracking-widest mb-1">Outstanding</p>
-            <p className="text-2xl font-bold text-red-600 dark:text-red-400">₹{(reportData.outstanding || 0).toLocaleString()}</p>
-          </Card>
+        {/* Stat Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: "Total Principal", value: reportData.totalAmount, color: "#d4af37", icon: "₹", glow: "rgba(212,175,55,0.3)" },
+            { label: "Interest Earned", value: reportData.totalInterest, color: "#10b981", icon: "+", glow: "rgba(16,185,129,0.3)" },
+            { label: "Total Received", value: reportData.totalPaid, color: "#60a5fa", icon: "↓", glow: "rgba(96,165,250,0.3)" },
+            { label: "Outstanding", value: reportData.outstanding, color: "#e11d48", icon: "!", glow: "rgba(225,29,72,0.3)" },
+          ].map((stat, i) => (
+            <motion.div
+              key={stat.label}
+              variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0, transition: { delay: i * 0.1, type: "spring", bounce: 0.4 } } }}
+            >
+              <Card className={`p-5 relative overflow-hidden`} noHover>
+                {/* Ambient glow */}
+                <div className="absolute -top-6 -right-6 w-20 h-20 rounded-full blur-2xl opacity-30 pointer-events-none" style={{ backgroundColor: stat.color }} />
+                <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: stat.color }}>{stat.label}</p>
+                <p className="text-2xl sm:text-3xl font-black text-white truncate">₹{(stat.value || 0).toLocaleString('en-IN')}</p>
+                <div className="mt-3 h-0.5 w-full rounded-full" style={{ background: `linear-gradient(to right, ${stat.color}40, transparent)` }} />
+              </Card>
+            </motion.div>
+          ))}
         </div>
 
-        <Card className="overflow-hidden" noHover>
-          <div className="p-6 border-b border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5">
-            <h3 className="font-bold">Loan Performance Report</h3>
+        {/* Loan Performance Table */}
+        <motion.div variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}>
+          <div className="rounded-2xl border border-white/10 overflow-hidden">
+            <div className="px-6 py-4 border-b border-white/10 bg-white/5 flex items-center justify-between">
+              <h3 className="font-black text-white tracking-tight">Loan Performance Report</h3>
+              <span className="text-[10px] font-black uppercase tracking-widest text-[#d4af37] px-3 py-1 bg-[#d4af37]/10 border border-[#d4af37]/20 rounded-full">{loans.length} Loans</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="text-[10px] font-black uppercase tracking-widest text-white/30 bg-black/20">
+                    <th className="px-6 py-3.5">Borrower</th>
+                    <th className="px-6 py-3.5">Direction</th>
+                    <th className="px-6 py-3.5">Principal (Rem.)</th>
+                    <th className="px-6 py-3.5">Interest Accrued</th>
+                    <th className="px-6 py-3.5">Total Due</th>
+                    <th className="px-6 py-3.5">Total Paid</th>
+                    <th className="px-6 py-3.5">Balance</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {loans.map((loan, idx) => {
+                    const interest = loan.accruedInterest || 0;
+                    const totalDue = (loan.currentPrincipal || 0) + interest;
+                    const paid = loan.paid_amount || 0;
+                    const balance = loan.balance || 0;
+
+                    return (
+                      <motion.tr
+                        key={loan.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        whileInView={{ opacity: 1, x: 0 }}
+                        transition={{ delay: idx * 0.02 }}
+                        viewport={{ once: true }}
+                        className="hover:bg-white/5 transition-colors"
+                      >
+                        <td className="px-6 py-4 font-semibold text-white">{loan.borrower_name}</td>
+                        <td className="px-6 py-4">
+                          <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full border ${loan.direction === 'Borrowed'
+                              ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                              : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                            }`}>
+                            {loan.direction}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-white/70">₹{(loan.currentPrincipal || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-6 py-4 text-emerald-400 font-medium">+₹{interest.toLocaleString('en-IN')}</td>
+                        <td className="px-6 py-4 font-bold text-white">₹{totalDue.toLocaleString('en-IN')}</td>
+                        <td className="px-6 py-4 text-blue-400 font-medium">-₹{paid.toLocaleString('en-IN')}</td>
+                        <td className="px-6 py-4">
+                          <span className={`font-black text-sm ${balance > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                            ₹{balance.toLocaleString('en-IN')}
+                          </span>
+                        </td>
+                      </motion.tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {loans.length === 0 && (
+                <div className="text-center py-16 text-white/20 font-medium">No loan data available yet.</div>
+              )}
+            </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-black/5 dark:bg-white/5 text-[10px] font-bold uppercase tracking-wider text-black/40 dark:text-white/30">
-                <tr>
-                  <th className="px-6 py-3">Borrower</th>
-                  <th className="px-6 py-3">Direction</th>
-                  <th className="px-6 py-3">Principal (Rem.)</th>
-                  <th className="px-6 py-3">Interest Accrued</th>
-                  <th className="px-6 py-3">Total Due</th>
-                  <th className="px-6 py-3">Total Paid</th>
-                  <th className="px-6 py-3">Balance</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-black/5 dark:divide-white/5">
-                {loans.map((loan, idx) => {
-                  const interest = loan.accruedInterest || 0;
-                  const totalDue = (loan.currentPrincipal || 0) + interest;
-                  const paid = loan.paid_amount || 0;
-                  const balance = loan.balance || 0;
-                  
-                  return (
-                    <motion.tr 
-                      key={loan.id} 
-                      initial={{ opacity: 0, x: -10 }}
-                      whileInView={{ opacity: 1, x: 0 }}
-                      transition={{ delay: idx * 0.02 }}
-                      viewport={{ once: true }}
-                      className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                    >
-                      <td className="px-6 py-4 font-semibold">{loan.borrower_name}</td>
-                      <td className="px-6 py-4">
-                        <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full ${loan.direction === 'Borrowed' ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400' : 'bg-black/10 dark:bg-white/10 text-black/50 dark:text-white/40'}`}>
-                          {loan.direction}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">₹{(loan.currentPrincipal || 0).toLocaleString()}</td>
-                      <td className="px-6 py-4 text-emerald-600 dark:text-emerald-400">+₹{interest.toLocaleString()}</td>
-                      <td className="px-6 py-4 font-bold">₹{totalDue.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-blue-600 dark:text-blue-400">-₹{paid.toLocaleString()}</td>
-                      <td className="px-6 py-4 font-bold text-red-600 dark:text-red-400">₹{balance.toLocaleString()}</td>
-                    </motion.tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+        </motion.div>
       </motion.div>
     );
   };
@@ -775,26 +820,31 @@ export default function App() {
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/60 backdrop-blur-md"
           />
-          <motion.div 
-            initial={{ scale: 0.95, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.95, opacity: 0, y: 20 }}
-            className="relative bg-white dark:bg-zinc-900 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden"
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0, y: 30, rotateX: 10 }}
+            animate={{ scale: 1, opacity: 1, y: 0, rotateX: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: 30, rotateX: -10 }}
+            transition={{ type: "spring", damping: 20, stiffness: 300 }}
+            className="relative glass-panel w-full max-w-lg rounded-3xl overflow-hidden border border-white/20 shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
           >
-            <div className="p-6 border-b border-black/5 dark:border-white/5 flex justify-between items-center">
-              <h3 className="text-xl font-bold">{title}</h3>
-              <button onClick={onClose} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors">
+            {/* Modal Ambient Glow */}
+            <div className="absolute -top-24 -right-24 w-48 h-48 bg-[#00e5ff] rounded-full mix-blend-screen filter blur-[80px] opacity-40 pointer-events-none" />
+            <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-[#ff0055] rounded-full mix-blend-screen filter blur-[80px] opacity-20 pointer-events-none" />
+
+            <div className="p-6 border-b border-white/10 flex justify-between items-center relative z-10 bg-black/20">
+              <h3 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-white/70">{title}</h3>
+              <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors text-white/50 hover:text-white">
                 <X size={20} />
               </button>
             </div>
-            <div className="p-6">
+            <div className="p-6 relative z-10">
               {children}
             </div>
           </motion.div>
@@ -806,12 +856,12 @@ export default function App() {
   return (
     <div className="min-h-screen">
       {/* Sidebar / Nav */}
-      <nav className="fixed bottom-0 left-0 right-0 md:top-0 md:bottom-0 md:w-20 lg:w-64 bg-white dark:bg-zinc-900 border-t md:border-t-0 md:border-r border-black/5 dark:border-white/5 z-40 flex md:flex-col">
-        <div className="hidden md:flex p-6 mb-4">
-          <div className="w-10 h-10 bg-black dark:bg-white rounded-xl flex items-center justify-center text-white dark:text-black font-black text-xl">L</div>
-          <span className="hidden lg:block ml-3 font-black text-xl tracking-tight">LendTrack</span>
+      <nav className="fixed bottom-0 left-0 right-0 md:top-0 md:bottom-0 md:w-64 glass-nav z-40 flex md:flex-col">
+        <div className="hidden md:flex p-6 mb-4 items-center">
+          <div className="w-10 h-10 min-w-[40px] bg-gradient-to-br from-[#00e5ff] to-[#ff0055] rounded-xl flex items-center justify-center text-white font-black text-xl shadow-[0_0_15px_rgba(0,229,255,0.5)]">L</div>
+          <span className="ml-3 font-black text-xl tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-white/50">LendTrack</span>
         </div>
-        
+
         <div className="flex flex-1 justify-around md:flex-col md:justify-start md:px-3 gap-1 py-2 md:py-0">
           {[
             { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -824,42 +874,39 @@ export default function App() {
               whileHover={{ scale: 1.02, x: 4 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex flex-col md:flex-row items-center gap-1 md:gap-3 p-3 md:px-4 md:py-3 rounded-xl transition-all ${
-                activeTab === tab.id 
-                  ? 'bg-black dark:bg-white text-white dark:text-black' 
-                  : 'text-black/40 dark:text-white/40 hover:bg-black/5 dark:hover:bg-white/5 hover:text-black dark:hover:text-white'
-              }`}
+              className={`flex flex-col md:flex-row items-center md:justify-start gap-1 md:gap-3 p-3 md:px-4 md:py-3 rounded-xl transition-all w-full overflow-hidden relative group ${activeTab === tab.id
+                ? 'text-white'
+                : 'text-white/40 hover:bg-white/5 hover:text-white'
+                }`}
             >
-              <tab.icon size={20} />
-              <span className="text-[10px] md:text-sm font-bold uppercase md:capitalize tracking-wider md:tracking-normal">{tab.label}</span>
+              {activeTab === tab.id && (
+                <motion.div
+                  layoutId="activeTabIndicator"
+                  className="absolute inset-0 bg-gradient-to-r from-white/10 to-transparent border-l-2 border-[#00e5ff] shadow-[inset_10px_0_20px_rgba(0,229,255,0.1)] rounded-xl -z-10"
+                />
+              )}
+              <tab.icon size={20} className="shrink-0" />
+              <span className="text-[10px] md:text-sm font-bold uppercase md:capitalize tracking-wider md:tracking-normal truncate">{tab.label}</span>
             </motion.button>
           ))}
         </div>
       </nav>
 
       {/* Main Content */}
-      <main className="pb-24 md:pb-8 md:pl-20 lg:pl-64 min-h-screen">
-        <header className="sticky top-0 bg-[#F8F9FA]/80 dark:bg-zinc-950/80 backdrop-blur-md z-30 p-6 flex justify-between items-center">
-          <h1 className="text-2xl font-black capitalize">{activeTab}</h1>
+      <main className="pb-24 md:pb-8 md:pl-64 min-h-screen relative z-10">
+        <header className="sticky top-0 bg-black/20 backdrop-blur-xl border-b border-white/5 z-30 p-6 flex justify-between items-center shadow-lg">
+          <h1 className="text-2xl font-black capitalize tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-[#00e5ff] to-white">{activeTab}</h1>
           <div className="flex items-center gap-4">
-            <button 
-              type="button"
-              onClick={() => setDarkMode(prev => !prev)}
-              className="p-2.5 rounded-full bg-white dark:bg-zinc-800 border border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 transition-all cursor-pointer z-50"
-              aria-label="Toggle dark mode"
-            >
-              {darkMode ? <Sun size={20} className="text-amber-500" /> : <Moon size={20} className="text-zinc-600" />}
-            </button>
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-zinc-800 rounded-full border border-black/5 dark:border-white/5 text-xs font-bold">
-              <Calendar size={14} /> {new Date().toLocaleDateString()}
+            <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-white/5 rounded-full border border-white/10 text-xs font-bold shadow-inner backdrop-blur-md">
+              <Calendar size={14} className="text-[#00e5ff]" /> {new Date().toLocaleDateString()}
             </div>
-            <div className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 flex items-center justify-center font-bold">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-white/10 to-white/5 border border-white/10 flex items-center justify-center font-bold shadow-[0_0_10px_rgba(255,0,85,0.2)]">
               JD
             </div>
           </div>
         </header>
 
-        <div className="p-6 max-w-7xl mx-auto">
+        <div className="p-6 max-w-7xl mx-auto relative z-10">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -878,9 +925,9 @@ export default function App() {
       </main>
 
       {/* Modals */}
-      <Modal 
-        isOpen={showBorrowerModal} 
-        onClose={() => setShowBorrowerModal(false)} 
+      <Modal
+        isOpen={showBorrowerModal}
+        onClose={() => setShowBorrowerModal(false)}
         title="Add New Borrower"
       >
         <form onSubmit={handleAddBorrower} className="space-y-4">
@@ -889,62 +936,62 @@ export default function App() {
           <Input label="Address" name="address" placeholder="123 Street, City" />
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold uppercase tracking-wider text-black/50 dark:text-white/40 ml-1">Notes</label>
-            <textarea 
-              name="notes" 
-              className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 transition-all bg-white dark:bg-zinc-800 text-black dark:text-white min-h-[100px]" 
+            <textarea
+              name="notes"
+              className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 transition-all bg-white dark:bg-zinc-800 text-black dark:text-white min-h-[100px]"
             />
           </div>
           <Button type="submit" className="w-full py-3">Save Borrower</Button>
         </form>
       </Modal>
 
-      <Modal 
-        isOpen={showLoanModal} 
-        onClose={() => setShowLoanModal(false)} 
+      <Modal
+        isOpen={showLoanModal}
+        onClose={() => setShowLoanModal(false)}
         title="Create New Loan"
       >
         <form onSubmit={handleCreateLoan} className="space-y-4">
-          <Select 
-            label="Select Borrower" 
-            name="borrower_id" 
-            required 
+          <Select
+            label="Select Borrower"
+            name="borrower_id"
+            required
             options={[
               { value: '', label: 'Choose a borrower...' },
               ...borrowers.map(b => ({ value: b.id.toString(), label: b.name }))
-            ]} 
+            ]}
           />
           <div className="grid grid-cols-2 gap-4">
-            <Select 
-              label="Loan Direction" 
-              name="direction" 
-              required 
+            <Select
+              label="Loan Direction"
+              name="direction"
+              required
               defaultValue="Lent"
               options={[
                 { value: 'Lent', label: 'I am Lending' },
                 { value: 'Borrowed', label: 'I am Borrowing' }
-              ]} 
+              ]}
             />
-            <Select 
-              label="Loan Type" 
-              name="loan_type" 
-              required 
+            <Select
+              label="Loan Type"
+              name="loan_type"
+              required
               defaultValue="Interest Only"
               options={[
                 { value: 'Interest Only', label: 'Interest Only' },
                 { value: 'Installment', label: 'Installment Plan' }
-              ]} 
+              ]}
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Select 
-              label="Period Type" 
-              name="interest_type" 
-              required 
+            <Select
+              label="Period Type"
+              name="interest_type"
+              required
               options={[
                 { value: 'Daily', label: 'Daily' },
                 { value: 'Weekly', label: 'Weekly' },
                 { value: 'Monthly', label: 'Monthly' }
-              ]} 
+              ]}
             />
             <Input label="Start Date" name="start_date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} />
           </div>
@@ -964,45 +1011,45 @@ export default function App() {
         </form>
       </Modal>
 
-      <Modal 
-        isOpen={showEditLoanModal} 
-        onClose={() => { setShowEditLoanModal(false); setSelectedLoan(null); }} 
+      <Modal
+        isOpen={showEditLoanModal}
+        onClose={() => { setShowEditLoanModal(false); setSelectedLoan(null); }}
         title={`Edit Loan #${selectedLoan?.id}`}
       >
         <form onSubmit={handleEditLoan} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <Select 
-              label="Loan Direction" 
-              name="direction" 
-              required 
+            <Select
+              label="Loan Direction"
+              name="direction"
+              required
               defaultValue={selectedLoan?.direction}
               options={[
                 { value: 'Lent', label: 'I am Lending' },
                 { value: 'Borrowed', label: 'I am Borrowing' }
-              ]} 
+              ]}
             />
-            <Select 
-              label="Loan Type" 
-              name="loan_type" 
-              required 
+            <Select
+              label="Loan Type"
+              name="loan_type"
+              required
               defaultValue={selectedLoan?.loan_type}
               options={[
                 { value: 'Interest Only', label: 'Interest Only' },
                 { value: 'Installment', label: 'Installment Plan' }
-              ]} 
+              ]}
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Select 
-              label="Period Type" 
-              name="interest_type" 
-              required 
+            <Select
+              label="Period Type"
+              name="interest_type"
+              required
               defaultValue={selectedLoan?.interest_type}
               options={[
                 { value: 'Daily', label: 'Daily' },
                 { value: 'Weekly', label: 'Weekly' },
                 { value: 'Monthly', label: 'Monthly' }
-              ]} 
+              ]}
             />
             <Input label="Start Date" name="start_date" type="date" required defaultValue={selectedLoan?.start_date} />
           </div>
@@ -1016,24 +1063,24 @@ export default function App() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Duration" name="duration" type="number" defaultValue={selectedLoan?.duration || ''} />
-            <Select 
-              label="Status" 
-              name="status" 
-              required 
+            <Select
+              label="Status"
+              name="status"
+              required
               defaultValue={selectedLoan?.status}
               options={[
                 { value: 'Active', label: 'Active' },
                 { value: 'Closed', label: 'Closed' }
-              ]} 
+              ]}
             />
           </div>
           <Button type="submit" className="w-full py-3">Update Loan</Button>
         </form>
       </Modal>
 
-      <Modal 
-        isOpen={showPaymentModal} 
-        onClose={() => { setShowPaymentModal(false); setSelectedLoan(null); }} 
+      <Modal
+        isOpen={showPaymentModal}
+        onClose={() => { setShowPaymentModal(false); setSelectedLoan(null); }}
         title={`Add Payment for Loan #${selectedLoan?.id}`}
       >
         <form onSubmit={handleAddPayment} className="space-y-4">
@@ -1059,19 +1106,19 @@ export default function App() {
         </form>
       </Modal>
 
-      <Modal 
-        isOpen={showCapitalModal} 
-        onClose={() => setShowCapitalModal(false)} 
+      <Modal
+        isOpen={showCapitalModal}
+        onClose={() => setShowCapitalModal(false)}
         title="Update Total Capital"
       >
         <form onSubmit={handleUpdateCapital} className="space-y-4">
-          <Input 
-            label="Total Invested Capital (₹)" 
-            name="amount" 
-            type="number" 
-            required 
+          <Input
+            label="Total Invested Capital (₹)"
+            name="amount"
+            type="number"
+            required
             defaultValue={stats.investedCapital}
-            placeholder="500000" 
+            placeholder="500000"
           />
           <p className="text-xs text-black/40">This is the total amount of money you have available for lending.</p>
           <Button type="submit" className="w-full py-3">Update Capital</Button>
@@ -1082,14 +1129,14 @@ export default function App() {
       <AnimatePresence>
         {viewingBorrowerProfile && (
           <div className="fixed inset-0 z-50 flex items-center justify-end">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setViewingBorrowerProfile(null)}
               className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             />
-            <motion.div 
+            <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -1104,7 +1151,7 @@ export default function App() {
               </div>
 
               <div className="p-8 space-y-8">
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.1 }}
@@ -1123,7 +1170,7 @@ export default function App() {
                   </div>
                 </motion.div>
 
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.2 }}

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: loan-app
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm run dev
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_PATH
+        value: /opt/render/project/src/data/loans.db
+    disk:
+      name: sqlite-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1

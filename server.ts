@@ -7,7 +7,8 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const db = new Database("loans.db");
+const dbPath = process.env.DB_PATH || "loans.db";
+const db = new Database(dbPath);
 
 // Initialize Database
 db.exec(`
@@ -62,9 +63,9 @@ if (borrowerCount.count === 0) {
     INSERT INTO borrowers (name, phone, address, notes) 
     VALUES ('Default Borrower', '9876543210', 'Main Street, India', 'Auto-generated default borrower')
   `).run();
-  
+
   const borrowerId = borrowerInfo.lastInsertRowid;
-  
+
   db.prepare(`
     INSERT INTO loans (borrower_id, amount, given_amount, loan_type, interest_type, interest_rate, start_date, duration) 
     VALUES (?, 10000, 10000, 'Interest Only', 'Monthly', 5, ?, 12)
@@ -73,7 +74,7 @@ if (borrowerCount.count === 0) {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
   app.use(express.json());
 
@@ -87,7 +88,7 @@ async function startServer() {
       const totalCollected = db.prepare("SELECT SUM(amount) as total FROM payments p JOIN loans l ON p.loan_id = l.id WHERE l.direction = 'Lent'").get() as any;
       const activeBorrowers = db.prepare("SELECT COUNT(DISTINCT borrower_id) as count FROM loans WHERE status = 'Active' AND direction = 'Lent'").get() as any;
       const capital = db.prepare("SELECT amount FROM capital WHERE id = 1").get() as any;
-      
+
       res.json({
         totalGiven: totalLent.total || 0,
         totalBorrowed: totalBorrowed.total || 0,
@@ -115,14 +116,14 @@ async function startServer() {
   // Helper for loan calculations
   const getLoanSummary = (loan: any) => {
     const payments = db.prepare("SELECT * FROM payments WHERE loan_id = ?").all(loan.id) as any[];
-    
+
     let currentPrincipal = loan.amount;
     let totalAccruedInterest = 0;
     let lastDate = new Date(loan.start_date);
     const now = new Date();
-    
+
     const sortedPayments = [...payments].sort((a, b) => new Date(a.payment_date).getTime() - new Date(b.payment_date).getTime());
-    
+
     if (loan.loan_type === 'Installment') {
       const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
       return {
@@ -137,7 +138,7 @@ async function startServer() {
     for (const payment of sortedPayments) {
       const paymentDate = new Date(payment.payment_date);
       const diffTime = Math.max(0, paymentDate.getTime() - lastDate.getTime());
-      
+
       let periods = 0;
       if (loan.interest_type === 'Daily') {
         periods = diffTime / (1000 * 60 * 60 * 24);
@@ -146,19 +147,19 @@ async function startServer() {
       } else if (loan.interest_type === 'Monthly') {
         periods = diffTime / (1000 * 60 * 60 * 24 * 30);
       }
-      
+
       const interest = currentPrincipal * (loan.interest_rate / 100) * periods;
       totalAccruedInterest += interest;
-      
+
       let paymentRemaining = payment.amount;
       const interestPaid = Math.min(paymentRemaining, totalAccruedInterest);
       totalAccruedInterest -= interestPaid;
       paymentRemaining -= interestPaid;
-      
+
       currentPrincipal -= paymentRemaining;
       lastDate = paymentDate;
     }
-    
+
     const finalDiffTime = Math.max(0, now.getTime() - lastDate.getTime());
     let finalPeriods = 0;
     if (loan.interest_type === 'Daily') {
@@ -168,12 +169,12 @@ async function startServer() {
     } else if (loan.interest_type === 'Monthly') {
       finalPeriods = finalDiffTime / (1000 * 60 * 60 * 24 * 30);
     }
-    
+
     const finalInterest = currentPrincipal * (loan.interest_rate / 100) * finalPeriods;
     totalAccruedInterest += finalInterest;
-    
+
     const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
-    
+
     return {
       ...loan,
       accruedInterest: totalAccruedInterest,
@@ -232,19 +233,19 @@ async function startServer() {
   });
 
   app.put("/api/loans/:id", (req, res) => {
-    const { 
-      amount, 
-      given_amount, 
-      loan_type, 
-      direction, 
-      interest_type, 
-      interest_rate, 
-      installment_amount, 
-      start_date, 
-      duration, 
-      status 
+    const {
+      amount,
+      given_amount,
+      loan_type,
+      direction,
+      interest_type,
+      interest_rate,
+      installment_amount,
+      start_date,
+      duration,
+      status
     } = req.body;
-    
+
     db.prepare(`
       UPDATE loans 
       SET amount = ?, 
@@ -259,16 +260,16 @@ async function startServer() {
           status = ? 
       WHERE id = ?
     `).run(
-      amount, 
-      given_amount, 
-      loan_type, 
-      direction, 
-      interest_type, 
-      interest_rate, 
-      installment_amount, 
-      start_date, 
-      duration, 
-      status, 
+      amount,
+      given_amount,
+      loan_type,
+      direction,
+      interest_type,
+      interest_rate,
+      installment_amount,
+      start_date,
+      duration,
+      status,
       req.params.id
     );
     res.json({ success: true });
