@@ -158,21 +158,21 @@ export const FinancialVisualizer = ({ lent, borrowed, capital }: { lent: number,
       <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-white/5 to-transparent pointer-events-none" />
 
       <div className="absolute top-8 left-8 z-10 font-sans">
-        <h4 className="text-xs font-black uppercase tracking-[0.25em] text-[#d4af37]">Wealth Matrix</h4>
-        <p className="text-sm font-medium text-white/50 mt-1 uppercase tracking-wider">Asset Flow Visualization</p>
+        <h4 className="label-gold">Wealth Matrix</h4>
+        <p className="text-[10px] font-medium text-white/30 mt-1 uppercase tracking-widest">Asset Flow Visualization</p>
       </div>
 
       <div className="absolute bottom-8 right-8 z-10 flex gap-6 sm:gap-8 text-[9px] sm:text-xs font-bold uppercase tracking-widest text-white/40">
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+          <div className="w-1.5 h-1.5 rounded-full bg-[#10b981]" />
           <span>Lent</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(225,29,72,0.5)]" />
+          <div className="w-1.5 h-1.5 rounded-full bg-[#e11d48]" />
           <span>Borrowed</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-[#d4af37] shadow-[0_0_8px_rgba(212,175,55,0.5)]" />
+          <div className="w-1.5 h-1.5 rounded-full bg-[#d4af37]" />
           <span>Capital Base</span>
         </div>
       </div>
