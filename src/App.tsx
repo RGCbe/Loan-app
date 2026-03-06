@@ -219,8 +219,8 @@ const AuthView = () => {
         className="w-full max-w-md z-10"
       >
         <div className="text-center mb-10">
-          <h1 className="text-5xl font-black text-gold tracking-tighter mb-2">GOLD</h1>
-          <p className="text-[10px] font-black uppercase tracking-[0.4em] text-white/30">Ledger Ecosystem</p>
+          <h1 className="text-5xl font-black text-gold tracking-tighter mb-2">ME-TRIX</h1>
+          <p className="text-[10px] font-black uppercase tracking-[0.4em] text-white/30">Magic</p>
         </div>
 
         <div className="glass-panel p-8 rounded-[2.5rem] border border-white/10 shadow-2xl relative">
