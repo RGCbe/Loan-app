@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
+import { rateLimit } from "express-rate-limit";
 
 dotenv.config();
 
@@ -130,6 +131,15 @@ async function startServer() {
 
   app.use(express.json());
 
+  // --- Security: Rate Limiting ---
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: 10, // Limit each IP to 10 requests per windowMs
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: "Too many login attempts. Please try again in 15 minutes." }
+  });
+
   // --- Auth Middleware ---
   const authenticateToken = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     const authHeader = req.headers['authorization'];
@@ -145,7 +155,7 @@ async function startServer() {
   };
 
   // --- Auth Routes ---
-  app.post("/api/auth/signup", async (req, res) => {
+  app.post("/api/auth/signup", authLimiter, async (req, res) => {
     const { username, password } = req.body;
     try {
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -165,7 +175,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", authLimiter, async (req, res) => {
     const { username, password } = req.body;
     try {
       const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as any;
