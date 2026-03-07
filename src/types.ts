@@ -44,3 +44,20 @@ export interface Stats {
   activeBorrowers: number;
   investedCapital: number;
 }
+
+export interface User {
+  id: number;
+  username: string;
+  email?: string;
+  is_premium: number;
+  backup_enabled: number;
+  currency: string;
+  pin_enabled: number;
+}
+
+export interface ActivityLog {
+  id: number;
+  action: string;
+  details: string;
+  created_at: string;
+}
