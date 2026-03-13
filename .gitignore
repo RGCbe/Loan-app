@@ -3,10 +3,12 @@ build/
 dist/
 coverage/
 .DS_Store
+Thumbs.db
 *.log
 .env*
 !.env.example
-
-loans.db
+*.db
 .mcp.json
 .claude/
+.vscode/
+.idea/
