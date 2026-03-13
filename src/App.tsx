@@ -50,6 +50,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { Borrower, Loan, Payment, Stats, User, ActivityLog, ChitGroup, ChitMember, ChitAuction, ChitPayment } from './types';
 const ThreeVisuals = lazy(() => import('./components/ThreeVisuals').then(m => ({ default: m.FinancialVisualizer })));
+const LoginBg = lazy(() => import('./components/ThreeVisuals').then(m => ({ default: m.LoginVisualizer })));
 
 const AdComponent = ({ isPremium, onUpgrade }: { isPremium: boolean, onUpgrade: () => void }) => {
   if (isPremium) return null;
@@ -3210,8 +3211,11 @@ export default function App() {
 
   if (!token) {
     return (
-      <div className="min-h-screen bg-[#F8F9FA] dark:bg-zinc-950 flex items-center justify-center p-6">
-        <Card className="w-full max-w-md p-8">
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-6 relative overflow-hidden">
+        <Suspense fallback={null}>
+          <LoginBg />
+        </Suspense>
+        <Card className="w-full max-w-md p-8 relative z-10 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl border-white/20 dark:border-white/10">
           <div className="flex flex-col items-center mb-8">
             <div className="w-16 h-16 bg-black dark:bg-white rounded-2xl flex items-center justify-center text-white dark:text-black font-black text-3xl mb-4 shadow-xl">M</div>
             <h1 className="text-3xl font-black tracking-tighter">Metrix</h1>
