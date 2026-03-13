@@ -451,35 +451,47 @@ export default function App() {
   };
 
   const fetchActivityLogs = async () => {
-    const res = await offlineFetch('/api/activity', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    setActivityLogs(data);
+    try {
+      const res = await offlineFetch('/api/activity', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setActivityLogs(data);
+    } catch { /* offline or network error */ }
   };
 
   const fetchStats = async () => {
-    const res = await offlineFetch('/api/stats', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    setStats(data);
+    try {
+      const res = await offlineFetch('/api/stats', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setStats(data);
+    } catch { /* offline or network error */ }
   };
 
   const fetchBorrowers = async () => {
-    const res = await offlineFetch('/api/borrowers', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    setBorrowers(data);
+    try {
+      const res = await offlineFetch('/api/borrowers', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setBorrowers(data);
+    } catch { /* offline or network error */ }
   };
 
   const fetchLoans = async () => {
-    const res = await offlineFetch('/api/loans', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    setLoans(data);
+    try {
+      const res = await offlineFetch('/api/loans', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setLoans(data);
+    } catch { /* offline or network error */ }
   };
 
   const fetchChitGroups = async () => {
