@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+
+loans.db
+.mcp.json
+.claude/

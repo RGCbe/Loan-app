@@ -3,15 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  LayoutDashboard, 
+import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
+import { offlineFetch, flushQueue, getQueue } from './offline';
+import {
+  Wifi,
+  WifiOff,
+  LayoutDashboard,
   Users, 
   HandCoins, 
   History, 
   Plus, 
   Search, 
-  ChevronRight, 
+  ChevronRight,
+  ChevronLeft,
   Phone, 
   MapPin, 
   Calendar, 
@@ -40,12 +44,10 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Borrower, Loan, Payment, Stats, User, ActivityLog, ChitGroup, ChitMember, ChitAuction, ChitPayment } from './types';
-import { FinancialVisualizer } from './components/ThreeVisuals';
-
-const PREMIUM_PAUSED = true;
+const ThreeVisuals = lazy(() => import('./components/ThreeVisuals').then(m => ({ default: m.FinancialVisualizer })));
 
 const AdComponent = ({ isPremium, onUpgrade }: { isPremium: boolean, onUpgrade: () => void }) => {
-  if (isPremium || PREMIUM_PAUSED) return null;
+  if (isPremium) return null;
   
   return (
     <Card className="p-4 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border-indigo-500/20 relative overflow-hidden group mb-6">
@@ -140,13 +142,20 @@ const Button = ({
   );
 };
 
-const Input = ({ label, ...props }: { label?: string } & React.InputHTMLAttributes<HTMLInputElement>) => (
+const Input = ({ label, suffix, ...props }: { label?: string, suffix?: string } & React.InputHTMLAttributes<HTMLInputElement>) => (
   <div className="flex flex-col gap-1.5 w-full">
     {label && <label className="text-xs font-semibold uppercase tracking-wider text-black/50 dark:text-white/40 ml-1">{label}</label>}
-    <input 
-      {...props}
-      className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 transition-all bg-white dark:bg-zinc-800 text-black dark:text-white"
-    />
+    <div className="relative group">
+      <input
+        {...props}
+        className={`w-full px-4 py-3 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 transition-all bg-white dark:bg-zinc-800 text-black dark:text-white ${suffix ? 'pr-24' : ''}`}
+      />
+      {suffix && (
+        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[11px] font-black uppercase tracking-widest text-[#d4af37]/40 group-focus-within:text-[#d4af37] transition-colors pointer-events-none select-none">
+          {suffix}
+        </span>
+      )}
+    </div>
   </div>
 );
 
@@ -162,15 +171,15 @@ const Select = ({ label, options, ...props }: { label?: string, options: { value
   </div>
 );
 
-const PricingModal = ({ isOpen, onClose, onSelectPlan, onDemoUpgrade }: { isOpen: boolean, onClose: () => void, onSelectPlan: (plan: 'monthly' | 'yearly' | 'lifetime') => void, onDemoUpgrade: () => void }) => (
+const PricingModal = ({ isOpen, onClose, onUpgrade }: { isOpen: boolean, onClose: () => void, onUpgrade: () => void }) => (
   <AnimatePresence>
     {isOpen && (
       <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl border border-white/10"
+          className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-white/10"
         >
           <div className="p-8 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-gradient-to-r from-indigo-500/10 to-purple-500/10">
             <div>
@@ -178,73 +187,26 @@ const PricingModal = ({ isOpen, onClose, onSelectPlan, onDemoUpgrade }: { isOpen
                 <Sparkles className="text-indigo-500" />
                 Upgrade to Premium
               </h2>
-              <p className="text-sm text-black/40 dark:text-white/40 mt-1">Unlock exclusive features and support development</p>
+              <p className="text-sm text-black/40 dark:text-white/40 mt-1">Unlock all features</p>
             </div>
             <button onClick={onClose} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all">
               <X size={24} />
             </button>
           </div>
 
-          <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Monthly */}
-            <div className="p-6 rounded-2xl border border-black/5 dark:border-white/5 bg-black/2 dark:bg-white/2 flex flex-col items-center text-center group hover:border-indigo-500/30 transition-all">
-              <span className="text-xs font-bold uppercase tracking-widest text-indigo-500 mb-2">Basic</span>
-              <h3 className="text-lg font-bold">Monthly</h3>
-              <div className="my-4">
-                <span className="text-3xl font-bold">₹100</span>
-                <span className="text-sm text-black/40 dark:text-white/40">/mo</span>
-              </div>
-              <ul className="text-xs text-black/60 dark:text-white/60 space-y-2 mb-6 text-left w-full">
-                <li className="flex items-center gap-2"><ShieldCheck size={14} className="text-green-500" /> No Advertisements</li>
-                <li className="flex items-center gap-2"><ShieldCheck size={14} className="text-green-500" /> Cloud Backups</li>
-              </ul>
-              <Button onClick={() => onSelectPlan('monthly')} className="w-full mt-auto">Choose Plan</Button>
+          <div className="p-8 space-y-4">
+            <div className="text-center mb-4">
+              <span className="text-4xl font-black">$4.99</span>
+              <span className="text-sm text-black/40 dark:text-white/30">/month</span>
             </div>
-
-            {/* Yearly */}
-            <div className="p-6 rounded-2xl border-2 border-indigo-500 bg-indigo-500/5 flex flex-col items-center text-center relative overflow-hidden">
-              <div className="absolute top-0 right-0 bg-indigo-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl uppercase tracking-tighter">Best Value</div>
-              <span className="text-xs font-bold uppercase tracking-widest text-indigo-500 mb-2">Popular</span>
-              <h3 className="text-lg font-bold">Yearly</h3>
-              <div className="my-4">
-                <span className="text-3xl font-bold">₹1000</span>
-                <span className="text-sm text-black/40 dark:text-white/40">/yr</span>
-              </div>
-              <ul className="text-xs text-black/60 dark:text-white/60 space-y-2 mb-6 text-left w-full">
-                <li className="flex items-center gap-2"><ShieldCheck size={14} className="text-green-500" /> All Monthly Features</li>
-                <li className="flex items-center gap-2"><ShieldCheck size={14} className="text-green-500" /> 2 Months Free</li>
-              </ul>
-              <Button onClick={() => onSelectPlan('yearly')} className="w-full mt-auto">Choose Plan</Button>
-            </div>
-
-            {/* Lifetime */}
-            <div className="p-6 rounded-2xl border border-black/5 dark:border-white/5 bg-black/2 dark:bg-white/2 flex flex-col items-center text-center group hover:border-purple-500/30 transition-all">
-              <span className="text-xs font-bold uppercase tracking-widest text-purple-500 mb-2">Ultimate</span>
-              <h3 className="text-lg font-bold">Lifetime</h3>
-              <div className="my-4">
-                <span className="text-3xl font-bold">₹4999</span>
-                <span className="text-sm text-black/40 dark:text-white/40"> once</span>
-              </div>
-              <ul className="text-xs text-black/60 dark:text-white/60 space-y-2 mb-6 text-left w-full">
-                <li className="flex items-center gap-2"><ShieldCheck size={14} className="text-green-500" /> Pay Once, Use Forever</li>
-                <li className="flex items-center gap-2"><ShieldCheck size={14} className="text-green-500" /> Priority Support</li>
-              </ul>
-              <Button onClick={() => onSelectPlan('lifetime')} variant="secondary" className="w-full mt-auto border-purple-500/20 text-purple-500">Go Lifetime</Button>
-            </div>
-          </div>
-          
-          <div className="p-8 pt-0 border-t border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5">
-            <div className="flex flex-col items-center gap-4">
-              <p className="text-[10px] text-black/40 dark:text-white/40 text-center">
-                Razorpay activation may take up to 7 days. Use the button below to test premium features immediately.
-              </p>
-              <button 
-                onClick={onDemoUpgrade}
-                className="px-6 py-2 rounded-full border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-500/10 transition-all"
-              >
-                Bypass Payment for Testing (Demo Mode)
-              </button>
-            </div>
+            <ul className="text-sm text-black/70 dark:text-white/60 space-y-3">
+              <li className="flex items-center gap-3"><ShieldCheck size={16} className="text-green-500" /> No Advertisements</li>
+              <li className="flex items-center gap-3"><ShieldCheck size={16} className="text-green-500" /> Cloud Backups</li>
+              <li className="flex items-center gap-3"><ShieldCheck size={16} className="text-green-500" /> Priority Support</li>
+              <li className="flex items-center gap-3"><ShieldCheck size={16} className="text-green-500" /> All Features Unlocked</li>
+            </ul>
+            <Button onClick={onUpgrade} className="w-full py-3 mt-4">Subscribe Now</Button>
+            <p className="text-[10px] text-center text-black/30 dark:text-white/20">Secure payment via Google Play / App Store</p>
           </div>
         </motion.div>
       </div>
@@ -330,21 +292,35 @@ export default function App() {
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
   const [viewingBorrowerProfile, setViewingBorrowerProfile] = useState<Borrower | null>(null);
   const [showPricingModal, setShowPricingModal] = useState(false);
+  const [showEditBorrowerModal, setShowEditBorrowerModal] = useState(false);
+  const [editingBorrower, setEditingBorrower] = useState<Borrower | null>(null);
   const [showBulkPaymentModal, setShowBulkPaymentModal] = useState(false);
   const [showConsolidateModal, setShowConsolidateModal] = useState(false);
   const [selectedLoanIds, setSelectedLoanIds] = useState<number[]>([]);
   const [selectedChitMemberIds, setSelectedChitMemberIds] = useState<number[]>([]);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [pendingCount, setPendingCount] = useState(getQueue().length);
   const [showBulkChitPaymentModal, setShowBulkChitPaymentModal] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [borrowerPage, setBorrowerPage] = useState(1);
+  const [loanPage, setLoanPage] = useState(1);
+  const ITEMS_PER_PAGE = 12;
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('payment') === 'success') {
-      alert('Payment successful! Your account has been upgraded to Premium.');
+      showToast('Payment successful! Your account has been upgraded to Premium.');
       // Clear the URL parameter
       window.history.replaceState({}, document.title, window.location.pathname);
       if (token) fetchUser();
     } else if (params.get('payment') === 'cancel') {
-      alert('Payment cancelled.');
+      showToast('Payment cancelled.', 'error');
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, [token]);
@@ -373,6 +349,41 @@ export default function App() {
     };
   }, []);
 
+  // Offline detection and auto-sync
+  useEffect(() => {
+    const goOnline = async () => {
+      setIsOnline(true);
+      // Flush queued mutations when back online
+      const q = getQueue();
+      if (q.length > 0) {
+        const { success } = await flushQueue();
+        setPendingCount(getQueue().length);
+        if (success > 0) {
+          // Refresh data after syncing
+          if (token) {
+            fetchStats();
+            fetchBorrowers();
+            fetchLoans();
+            fetchChitGroups();
+          }
+        }
+      }
+    };
+    const goOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, [token]);
+
+  // Wrap mutation calls to track queue count
+  const trackQueue = useCallback(() => {
+    setPendingCount(getQueue().length);
+  }, []);
+
   const handleInstallApp = async () => {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
@@ -385,7 +396,7 @@ export default function App() {
 
   const fetchUser = async () => {
     try {
-      const res = await fetch('/api/auth/me', {
+      const res = await offlineFetch('/api/auth/me', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -403,7 +414,7 @@ export default function App() {
   };
 
   const fetchActivityLogs = async () => {
-    const res = await fetch('/api/activity', {
+    const res = await offlineFetch('/api/activity', {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const data = await res.json();
@@ -411,7 +422,7 @@ export default function App() {
   };
 
   const fetchStats = async () => {
-    const res = await fetch('/api/stats', {
+    const res = await offlineFetch('/api/stats', {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const data = await res.json();
@@ -419,7 +430,7 @@ export default function App() {
   };
 
   const fetchBorrowers = async () => {
-    const res = await fetch('/api/borrowers', {
+    const res = await offlineFetch('/api/borrowers', {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const data = await res.json();
@@ -427,7 +438,7 @@ export default function App() {
   };
 
   const fetchLoans = async () => {
-    const res = await fetch('/api/loans', {
+    const res = await offlineFetch('/api/loans', {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const data = await res.json();
@@ -435,42 +446,66 @@ export default function App() {
   };
 
   const fetchChitGroups = async () => {
-    const res = await fetch('/api/chit-groups', { headers: { 'Authorization': `Bearer ${token}` } });
+    const res = await offlineFetch('/api/chit-groups', { headers: { 'Authorization': `Bearer ${token}` } });
     if (res.ok) setChitGroups(await res.json());
   };
 
   const fetchChitMembers = async (groupId: number) => {
-    const res = await fetch(`/api/chit-groups/${groupId}/members`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const res = await offlineFetch(`/api/chit-groups/${groupId}/members`, { headers: { 'Authorization': `Bearer ${token}` } });
     if (res.ok) setChitMembers(await res.json());
   };
 
   const fetchChitAuctions = async (groupId: number) => {
-    const res = await fetch(`/api/chit-groups/${groupId}/auctions`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const res = await offlineFetch(`/api/chit-groups/${groupId}/auctions`, { headers: { 'Authorization': `Bearer ${token}` } });
     if (res.ok) setChitAuctions(await res.json());
   };
 
   const fetchChitPayments = async (groupId: number) => {
-    const res = await fetch(`/api/chit-groups/${groupId}/payments`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const res = await offlineFetch(`/api/chit-groups/${groupId}/payments`, { headers: { 'Authorization': `Bearer ${token}` } });
     if (res.ok) setChitPayments(await res.json());
   };
 
   const fetchBorrowerLoans = async (borrowerId: number) => {
-    const response = await fetch(`/api/borrowers/${borrowerId}/loans`, {
+    const response = await offlineFetch(`/api/borrowers/${borrowerId}/loans`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const data = await response.json();
     setLoans(data);
   };
 
-  const filteredBorrowers = borrowers.filter(b => 
-    b.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    b.phone.includes(searchQuery)
-  );
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery), 200);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
-  const filteredLoans = loans.filter(l => 
-    l.borrower_name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    l.id.toString().includes(searchQuery)
-  );
+  const filteredBorrowers = useMemo(() => borrowers.filter(b =>
+    b.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    b.phone.includes(debouncedSearch)
+  ), [borrowers, debouncedSearch]);
+
+  const filteredLoans = useMemo(() => loans.filter(l =>
+    l.borrower_name?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    l.id.toString().includes(debouncedSearch)
+  ), [loans, debouncedSearch]);
+
+  // Reset pages when search changes
+  useEffect(() => { setBorrowerPage(1); }, [debouncedSearch]);
+  useEffect(() => { setLoanPage(1); }, [debouncedSearch]);
+
+  const paginatedBorrowers = useMemo(() => {
+    const start = (borrowerPage - 1) * ITEMS_PER_PAGE;
+    return filteredBorrowers.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredBorrowers, borrowerPage]);
+
+  const totalBorrowerPages = Math.max(1, Math.ceil(filteredBorrowers.length / ITEMS_PER_PAGE));
+
+  const paginatedLoans = useMemo(() => {
+    const start = (loanPage - 1) * ITEMS_PER_PAGE;
+    return filteredLoans.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredLoans, loanPage]);
+
+  const totalLoanPages = Math.max(1, Math.ceil(filteredLoans.length / ITEMS_PER_PAGE));
 
   // --- Handlers ---
 
@@ -508,7 +543,7 @@ export default function App() {
     e.preventDefault();
     setRecoveryError('');
     try {
-      const res = await fetch('/api/auth/recovery/get-question', {
+      const res = await offlineFetch('/api/auth/recovery/get-question', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier: recoveryIdentifier })
@@ -529,7 +564,7 @@ export default function App() {
     e.preventDefault();
     setRecoveryError('');
     try {
-      const res = await fetch('/api/auth/recovery/reset-password', {
+      const res = await offlineFetch('/api/auth/recovery/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -568,30 +603,97 @@ export default function App() {
 
   const handleAddBorrower = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData.entries());
-    
-    await fetch('/api/borrowers', {
+
+    const res = await offlineFetch('/api/borrowers', {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify(data)
     });
-    
-    setShowBorrowerModal(false);
-    fetchBorrowers();
+    trackQueue();
+
+    if (res.ok) {
+      setShowBorrowerModal(false);
+      fetchBorrowers();
+      showToast('Borrower added successfully');
+    } else {
+      const err = await res.json().catch(() => ({ error: 'Failed to add borrower' }));
+      showToast(err.error || 'Failed to add borrower', 'error');
+    }
+    setIsSubmitting(false);
+  };
+
+  const handleEditBorrower = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (isSubmitting || !editingBorrower) return;
+    setIsSubmitting(true);
+    const formData = new FormData(e.currentTarget);
+    const data = Object.fromEntries(formData.entries());
+
+    const res = await offlineFetch(`/api/borrowers/${editingBorrower.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(data)
+    });
+    trackQueue();
+
+    if (res.ok) {
+      setShowEditBorrowerModal(false);
+      setEditingBorrower(null);
+      fetchBorrowers();
+      if (viewingBorrowerProfile?.id === editingBorrower.id) {
+        setViewingBorrowerProfile({ ...viewingBorrowerProfile, ...data } as Borrower);
+      }
+      showToast('Borrower updated successfully');
+    } else {
+      const err = await res.json().catch(() => ({ error: 'Failed to update borrower' }));
+      showToast(err.error || 'Failed to update borrower', 'error');
+    }
+    setIsSubmitting(false);
+  };
+
+  const handleDeleteBorrower = async (borrower: Borrower) => {
+    if (!confirm(`Delete "${borrower.name}"? This will also delete all their loans and payments. This cannot be undone.`)) return;
+    const res = await offlineFetch(`/api/borrowers/${borrower.id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    trackQueue();
+
+    if (res.ok) {
+      fetchBorrowers();
+      fetchLoans();
+      if (viewingBorrowerProfile?.id === borrower.id) setViewingBorrowerProfile(null);
+      showToast('Borrower deleted');
+    } else {
+      showToast('Failed to delete borrower', 'error');
+    }
+  };
+
+  const openEditBorrower = (borrower: Borrower) => {
+    setEditingBorrower(borrower);
+    setShowEditBorrowerModal(true);
   };
 
   const handleCreateLoan = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData.entries());
-    
-    await fetch('/api/loans', {
+
+    const res = await offlineFetch('/api/loans', {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -604,20 +706,30 @@ export default function App() {
         duration: data.duration ? Number(data.duration) : null
       })
     });
-    
-    setShowLoanModal(false);
-    fetchLoans();
-    fetchStats();
+    trackQueue();
+
+    if (res.ok) {
+      setShowLoanModal(false);
+      fetchLoans();
+      fetchStats();
+      showToast('Loan created successfully');
+    } else {
+      const err = await res.json().catch(() => ({ error: 'Failed to create loan' }));
+      showToast(err.error || 'Failed to create loan', 'error');
+    }
+    setIsSubmitting(false);
   };
 
   const handleAddPayment = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData.entries());
-    
-    await fetch('/api/payments', {
+
+    const res = await offlineFetch('/api/payments', {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -626,26 +738,34 @@ export default function App() {
         amount: Number(data.amount)
       })
     });
-    
-    setShowPaymentModal(false);
-    setSelectedLoan(null);
-    fetchLoans();
-    fetchStats();
-    if (viewingBorrowerProfile) {
-      fetchBorrowerLoans(viewingBorrowerProfile.id);
+    trackQueue();
+
+    if (res.ok) {
+      setShowPaymentModal(false);
+      setSelectedLoan(null);
+      fetchLoans();
+      fetchStats();
+      if (viewingBorrowerProfile) {
+        fetchBorrowerLoans(viewingBorrowerProfile.id);
+      }
+      showToast('Payment recorded successfully');
+    } else {
+      const err = await res.json().catch(() => ({ error: 'Failed to record payment' }));
+      showToast(err.error || 'Failed to record payment', 'error');
     }
+    setIsSubmitting(false);
   };
 
   const handleEditLoan = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!selectedLoan) return;
-    
+    if (!selectedLoan || isSubmitting) return;
+    setIsSubmitting(true);
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData.entries());
-    
-    await fetch(`/api/loans/${selectedLoan.id}`, {
+
+    const res = await offlineFetch(`/api/loans/${selectedLoan.id}`, {
       method: 'PUT',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -659,59 +779,88 @@ export default function App() {
         status: data.status
       })
     });
-    
-    setShowEditLoanModal(false);
-    setSelectedLoan(null);
-    fetchLoans();
-    fetchStats();
+    trackQueue();
+
+    if (res.ok) {
+      setShowEditLoanModal(false);
+      setSelectedLoan(null);
+      fetchLoans();
+      fetchStats();
+      showToast('Loan updated successfully');
+    } else {
+      const err = await res.json().catch(() => ({ error: 'Failed to update loan' }));
+      showToast(err.error || 'Failed to update loan', 'error');
+    }
+    setIsSubmitting(false);
   };
 
   const handleCloseLoan = async (loanId: number) => {
     if (!confirm('Are you sure you want to close this loan?')) return;
-    await fetch(`/api/loans/${loanId}`, {
+    const res = await offlineFetch(`/api/loans/${loanId}`, {
       method: 'PUT',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({ status: 'Closed' })
     });
-    fetchLoans();
-    fetchStats();
+    trackQueue();
+
+    if (res.ok) {
+      fetchLoans();
+      fetchStats();
+      showToast('Loan closed');
+    } else {
+      showToast('Failed to close loan', 'error');
+    }
   };
 
   const handleUpdateCapital = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const amount = Number(formData.get('amount'));
-    
-    await fetch('/api/capital', {
+
+    const res = await offlineFetch('/api/capital', {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({ amount })
     });
-    
-    setShowCapitalModal(false);
-    fetchStats();
+    trackQueue();
+
+    if (res.ok) {
+      setShowCapitalModal(false);
+      fetchStats();
+      showToast('Capital updated');
+    } else {
+      showToast('Failed to update capital', 'error');
+    }
   };
 
   const handleUpdateCurrency = async (currency: string) => {
-    await fetch('/api/user/currency', {
+    const res = await offlineFetch('/api/user/currency', {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({ currency })
     });
-    fetchUser();
+    trackQueue();
+
+    if (res.ok) {
+      fetchUser();
+      showToast('Currency updated');
+    } else {
+      const err = await res.json().catch(() => ({ error: 'Failed to update currency' }));
+      showToast(err.error || 'Failed to update currency', 'error');
+    }
   };
 
   const handlePinSetup = async (pin: string) => {
-    const res = await fetch('/api/user/pin/setup', {
+    const res = await offlineFetch('/api/user/pin/setup', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -727,7 +876,7 @@ export default function App() {
   const handlePinVerify = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setPinError('');
-    const res = await fetch('/api/user/pin/verify', {
+    const res = await offlineFetch('/api/user/pin/verify', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -745,7 +894,7 @@ export default function App() {
   };
 
   const handleTogglePin = async (enabled: boolean) => {
-    const res = await fetch('/api/user/pin/toggle', {
+    const res = await offlineFetch('/api/user/pin/toggle', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -759,7 +908,7 @@ export default function App() {
   };
 
   const handleExportCSV = async () => {
-    const res = await fetch('/api/export/loans', {
+    const res = await offlineFetch('/api/export/loans', {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const blob = await res.blob();
@@ -773,7 +922,7 @@ export default function App() {
   };
 
   const handleExportJSON = async () => {
-    const res = await fetch('/api/user/export', {
+    const res = await offlineFetch('/api/user/export', {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const data = await res.json();
@@ -787,9 +936,43 @@ export default function App() {
     window.URL.revokeObjectURL(url);
   };
 
+  const handleImportJSON = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        if (!data.borrowers || !data.loans) {
+          showToast('Invalid backup file format', 'error');
+          return;
+        }
+        if (!confirm(`Import ${data.borrowers.length} borrowers, ${data.loans.length} loans, and ${(data.payments || []).length} payments? This will ADD to your existing data.`)) return;
+        const res = await offlineFetch('/api/user/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify(data)
+        });
+        if (res.ok) {
+          showToast('Data imported successfully');
+          fetchBorrowers(); fetchLoans();
+        } else {
+          const err = await res.json();
+          showToast(err.error || 'Import failed', 'error');
+        }
+      } catch {
+        showToast('Failed to read backup file', 'error');
+      }
+    };
+    input.click();
+  };
+
   const handleDeleteAccount = async () => {
     if (!confirm('CRITICAL: This will permanently delete your account and all associated data. This action cannot be undone. Are you sure?')) return;
-    const res = await fetch('/api/user/account', {
+    const res = await offlineFetch('/api/user/account', {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -807,98 +990,18 @@ export default function App() {
   };
 
   const handleUpgrade = () => {
-    if (PREMIUM_PAUSED) return;
     setShowPricingModal(true);
   };
 
-  const handleDemoUpgrade = async () => {
-    try {
-      const res = await fetch('/api/user/upgrade', {
-        method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      const data = await res.json();
-      if (data.success) {
-        setShowPricingModal(false);
-        fetchUser();
-        alert('Demo Mode: Account upgraded to premium for testing!');
-      }
-    } catch (err) {
-      console.error('Demo upgrade error:', err);
-    }
-  };
-
-  const handleRazorpayPayment = async (planType: 'monthly' | 'yearly' | 'lifetime') => {
-    try {
-      const res = await fetch('/api/razorpay/order', {
-        method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ planType })
-      });
-      
-      const order = await res.json();
-      if (order.error) throw new Error(order.error);
-
-      const options = {
-        key: 'RAZORPAY_KEY_ID', // This will be replaced by the real key if we fetch it, but for now we can assume it's set in env and we might need an endpoint to get it or just hardcode if it's public. Actually, Razorpay key_id is public.
-        amount: order.amount,
-        currency: order.currency,
-        name: "LendTrack Premium",
-        description: `${planType.charAt(0).toUpperCase() + planType.slice(1)} Subscription`,
-        order_id: order.id,
-        handler: async (response: any) => {
-          const verifyRes = await fetch('/api/razorpay/verify', {
-            method: 'POST',
-            headers: { 
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              ...response,
-              planType
-            })
-          });
-          
-          const verifyData = await verifyRes.json();
-          if (verifyData.success) {
-            setShowPricingModal(false);
-            fetchUser();
-            alert('Payment successful! Your account has been upgraded.');
-          } else {
-            alert('Payment verification failed.');
-          }
-        },
-        prefill: {
-          name: user?.username,
-          email: user?.email || ""
-        },
-        theme: {
-          color: "#6366f1"
-        }
-      };
-
-      // We need to get the key_id from the server or env. 
-      // Let's add an endpoint to get the public key.
-      const keyRes = await fetch('/api/razorpay/key');
-      const { keyId } = await keyRes.json();
-      options.key = keyId;
-
-      const rzp = new (window as any).Razorpay(options);
-      rzp.open();
-    } catch (err: any) {
-      console.error('Razorpay error:', err);
-      alert(`Error: ${err.message}`);
-    }
+  const handleActivatePremium = async () => {
+    // In production, this would redirect to a payment gateway (Stripe, Google Play, etc.)
+    // For now, show a message that payment integration is pending
+    showToast('Payment gateway coming soon. Stay tuned!', 'error');
+    setShowPricingModal(false);
   };
 
   const handleToggleBackup = async (enabled: boolean) => {
-    const res = await fetch('/api/user/backup', {
+    const res = await offlineFetch('/api/user/backup', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -912,79 +1015,98 @@ export default function App() {
   };
 
   const handleCreateChitGroup = async (data: any) => {
-    const res = await fetch('/api/chit-groups', {
+    const res = await offlineFetch('/api/chit-groups', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify(data)
     });
+    trackQueue();
     if (res.ok) {
       fetchChitGroups();
       setShowChitGroupModal(false);
+      showToast('Chit group created');
+    } else {
+      const err = await res.json().catch(() => ({ error: 'Failed to create chit group' }));
+      showToast(err.error || 'Failed to create chit group', 'error');
     }
   };
 
   const handleAddChitMember = async (borrowerId: number, slotNumber: number) => {
     if (!selectedChitGroup) return;
-    const res = await fetch(`/api/chit-groups/${selectedChitGroup.id}/members`, {
+    const res = await offlineFetch(`/api/chit-groups/${selectedChitGroup.id}/members`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ borrower_id: borrowerId, slot_number: slotNumber })
     });
+    trackQueue();
     if (res.ok) {
       fetchChitMembers(selectedChitGroup.id);
       setShowAddMemberModal(false);
+      showToast('Member added');
+    } else {
+      showToast('Failed to add member', 'error');
     }
   };
 
   const handleRecordAuction = async (data: any) => {
     if (!selectedChitGroup) return;
-    const res = await fetch(`/api/chit-groups/${selectedChitGroup.id}/auctions`, {
+    const res = await offlineFetch(`/api/chit-groups/${selectedChitGroup.id}/auctions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify(data)
     });
+    trackQueue();
     if (res.ok) {
       fetchChitAuctions(selectedChitGroup.id);
       fetchChitMembers(selectedChitGroup.id);
       setShowChitAuctionModal(false);
+      showToast('Auction recorded');
+    } else {
+      showToast('Failed to record auction', 'error');
     }
   };
 
   const handleRecordChitPayment = async (data: any) => {
     if (!selectedChitGroup) return;
-    const res = await fetch('/api/chit-payments', {
+    const res = await offlineFetch('/api/chit-payments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ ...data, chit_group_id: selectedChitGroup.id })
     });
+    trackQueue();
     if (res.ok) {
       fetchChitPayments(selectedChitGroup.id);
       setShowChitPaymentModal(false);
+      showToast('Payment recorded');
+    } else {
+      showToast('Failed to record payment', 'error');
     }
   };
 
   const handleBulkChitPayment = async (data: { chit_group_id: number, payments: { chit_member_id: number, amount: number }[], month_number: number, payment_date: string }) => {
-    const res = await fetch('/api/chit-payments/bulk', {
+    const res = await offlineFetch('/api/chit-payments/bulk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify(data)
     });
+    trackQueue();
     if (res.ok) {
       if (selectedChitGroup) fetchChitPayments(selectedChitGroup.id);
       setShowBulkChitPaymentModal(false);
       setSelectedChitMemberIds([]);
     } else {
       const err = await res.json();
-      alert(err.error || "Bulk payment failed");
+      showToast(err.error || "Bulk payment failed", 'error');
     }
   };
 
   const handleBulkPayment = async (data: { payments: { loan_id: number, amount: number }[], payment_date: string, notes: string }) => {
-    const res = await fetch('/api/payments/bulk', {
+    const res = await offlineFetch('/api/payments/bulk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify(data)
     });
+    trackQueue();
     if (res.ok) {
       fetchLoans();
       fetchStats();
@@ -992,16 +1114,17 @@ export default function App() {
       setSelectedLoanIds([]);
     } else {
       const err = await res.json();
-      alert(err.error || "Bulk payment failed");
+      showToast(err.error || "Bulk payment failed", 'error');
     }
   };
 
   const handleConsolidateLoans = async (loanIds: number[], newLoanDetails: any) => {
-    const res = await fetch('/api/loans/consolidate', {
+    const res = await offlineFetch('/api/loans/consolidate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ loan_ids: loanIds, new_loan_details: newLoanDetails })
     });
+    trackQueue();
     if (res.ok) {
       fetchLoans();
       fetchStats();
@@ -1009,7 +1132,7 @@ export default function App() {
       setSelectedLoanIds([]);
     } else {
       const err = await res.json();
-      alert(err.error || "Consolidation failed");
+      showToast(err.error || "Consolidation failed", 'error');
     }
   };
 
@@ -1035,11 +1158,10 @@ export default function App() {
       >
         <AdComponent isPremium={user?.is_premium === 1} onUpgrade={handleUpgrade} />
         
-        <PricingModal 
-          isOpen={showPricingModal} 
-          onClose={() => setShowPricingModal(false)} 
-          onSelectPlan={handleRazorpayPayment} 
-          onDemoUpgrade={handleDemoUpgrade}
+        <PricingModal
+          isOpen={showPricingModal}
+          onClose={() => setShowPricingModal(false)}
+          onUpgrade={handleActivatePremium}
         />
 
         <ChitGroupModal 
@@ -1096,7 +1218,9 @@ export default function App() {
         )}
         
         <motion.div variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}>
-          <FinancialVisualizer lent={stats.totalGiven} borrowed={stats.totalBorrowed} capital={stats.investedCapital} />
+          <Suspense fallback={<div className="w-full h-[350px] bg-zinc-950 rounded-3xl animate-pulse" />}>
+            <ThreeVisuals lent={stats.totalGiven} borrowed={stats.totalBorrowed} capital={stats.investedCapital} />
+          </Suspense>
         </motion.div>
         
         <motion.div 
@@ -1308,8 +1432,16 @@ export default function App() {
         </div>
       </FadeIn>
 
+      {filteredBorrowers.length === 0 ? (
+        <Card className="p-12 text-center" noHover>
+          <Users size={48} className="mx-auto text-black/10 dark:text-white/10 mb-4" />
+          <h3 className="text-lg font-bold mb-1">{borrowers.length === 0 ? 'No borrowers yet' : 'No results found'}</h3>
+          <p className="text-sm text-black/40 dark:text-white/30 mb-4">{borrowers.length === 0 ? 'Add your first borrower to get started.' : 'Try a different search term.'}</p>
+          {borrowers.length === 0 && <Button onClick={() => setShowBorrowerModal(true)}><Plus size={16} /> Add Borrower</Button>}
+        </Card>
+      ) : (<>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {filteredBorrowers.map(borrower => (
+        {paginatedBorrowers.map(borrower => (
           <Card key={borrower.id} className="p-5 hover:border-black/20 dark:hover:border-white/20 transition-all group">
             <div className="flex justify-between items-start mb-4">
               <div className="flex items-center gap-3">
@@ -1322,8 +1454,8 @@ export default function App() {
                 </div>
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg text-black/50 dark:text-white/40"><Edit2 size={16} /></button>
-                <button className="p-2 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg text-red-500"><Trash2 size={16} /></button>
+                <button onClick={(e) => { e.stopPropagation(); openEditBorrower(borrower); }} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg text-black/50 dark:text-white/40"><Edit2 size={16} /></button>
+                <button onClick={(e) => { e.stopPropagation(); handleDeleteBorrower(borrower); }} className="p-2 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg text-red-500"><Trash2 size={16} /></button>
               </div>
             </div>
             
@@ -1342,6 +1474,32 @@ export default function App() {
           </Card>
         ))}
       </div>
+
+      {totalBorrowerPages > 1 && (
+        <div className="flex items-center justify-center gap-2 mt-6">
+          <button
+            onClick={() => setBorrowerPage(p => Math.max(1, p - 1))}
+            disabled={borrowerPage === 1}
+            className="p-2 rounded-xl border border-black/10 dark:border-white/10 disabled:opacity-30 hover:bg-black/5 dark:hover:bg-white/5 transition-all"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <span className="text-sm font-medium px-3">
+            {borrowerPage} of {totalBorrowerPages}
+          </span>
+          <button
+            onClick={() => setBorrowerPage(p => Math.min(totalBorrowerPages, p + 1))}
+            disabled={borrowerPage === totalBorrowerPages}
+            className="p-2 rounded-xl border border-black/10 dark:border-white/10 disabled:opacity-30 hover:bg-black/5 dark:hover:bg-white/5 transition-all"
+          >
+            <ChevronRight size={16} />
+          </button>
+          <span className="text-xs text-black/40 dark:text-white/30 ml-2">
+            ({filteredBorrowers.length} total)
+          </span>
+        </div>
+      )}
+      </>)}
     </motion.div>
   );
 
@@ -1365,6 +1523,14 @@ export default function App() {
             </div>
           </FadeIn>
 
+          {chitGroups.length === 0 ? (
+            <Card className="p-12 text-center" noHover>
+              <UsersRound size={48} className="mx-auto text-black/10 dark:text-white/10 mb-4" />
+              <h3 className="text-lg font-bold mb-1">No chit groups yet</h3>
+              <p className="text-sm text-black/40 dark:text-white/30 mb-4">Create your first chit fund group to get started.</p>
+              <Button onClick={() => setShowChitGroupModal(true)}><Plus size={16} /> Create Group</Button>
+            </Card>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {chitGroups.map(group => (
               <Card key={group.id} className="p-6 hover:border-indigo-500/30 transition-all group cursor-pointer" onClick={() => {
@@ -1398,6 +1564,7 @@ export default function App() {
               </Card>
             ))}
           </div>
+          )}
         </>
       ) : (
         <div className="space-y-6">
@@ -1588,6 +1755,14 @@ export default function App() {
         </div>
       </FadeIn>
 
+      {filteredLoans.length === 0 ? (
+        <Card className="p-12 text-center" noHover>
+          <HandCoins size={48} className="mx-auto text-black/10 dark:text-white/10 mb-4" />
+          <h3 className="text-lg font-bold mb-1">{loans.length === 0 ? 'No loans yet' : 'No results found'}</h3>
+          <p className="text-sm text-black/40 dark:text-white/30 mb-4">{loans.length === 0 ? 'Create your first loan to start tracking.' : 'Try a different search term.'}</p>
+          {loans.length === 0 && <Button onClick={() => setShowLoanModal(true)}><Plus size={16} /> Create Loan</Button>}
+        </Card>
+      ) : (<>
       <div className="overflow-x-auto">
         <table className="w-full text-left border-separate border-spacing-y-2">
           <thead>
@@ -1603,7 +1778,7 @@ export default function App() {
             </tr>
           </thead>
           <tbody>
-            {filteredLoans.map((loan, idx) => (
+            {paginatedLoans.map((loan, idx) => (
               <motion.tr 
                 key={loan.id} 
                 initial={{ opacity: 0, y: 10 }}
@@ -1675,6 +1850,32 @@ export default function App() {
           </tbody>
         </table>
       </div>
+
+      {totalLoanPages > 1 && (
+        <div className="flex items-center justify-center gap-2 mt-6">
+          <button
+            onClick={() => setLoanPage(p => Math.max(1, p - 1))}
+            disabled={loanPage === 1}
+            className="p-2 rounded-xl border border-black/10 dark:border-white/10 disabled:opacity-30 hover:bg-black/5 dark:hover:bg-white/5 transition-all"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <span className="text-sm font-medium px-3">
+            {loanPage} of {totalLoanPages}
+          </span>
+          <button
+            onClick={() => setLoanPage(p => Math.min(totalLoanPages, p + 1))}
+            disabled={loanPage === totalLoanPages}
+            className="p-2 rounded-xl border border-black/10 dark:border-white/10 disabled:opacity-30 hover:bg-black/5 dark:hover:bg-white/5 transition-all"
+          >
+            <ChevronRight size={16} />
+          </button>
+          <span className="text-xs text-black/40 dark:text-white/30 ml-2">
+            ({filteredLoans.length} total)
+          </span>
+        </div>
+      )}
+      </>)}
     </motion.div>
   );
 
@@ -1813,24 +2014,22 @@ export default function App() {
           </div>
 
           <div className="space-y-4">
-            {!PREMIUM_PAUSED && (
-              <div className="p-4 rounded-2xl border border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-black dark:bg-white text-white dark:text-black rounded-lg">
-                    <ShieldCheck size={20} />
-                  </div>
-                  <div>
-                    <p className="font-bold">Premium Subscription</p>
-                    <p className="text-xs text-black/40 dark:text-white/30">Remove all ads and unlock advanced features.</p>
-                  </div>
+            <div className="p-4 rounded-2xl border border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-black dark:bg-white text-white dark:text-black rounded-lg">
+                  <ShieldCheck size={20} />
                 </div>
-                {user?.is_premium === 1 ? (
-                  <span className="text-xs font-bold text-emerald-500">Active</span>
-                ) : (
-                  <Button onClick={handleUpgrade} className="text-xs py-1.5">Upgrade {user?.currency || '₹'}99/mo</Button>
-                )}
+                <div>
+                  <p className="font-bold">Premium Features</p>
+                  <p className="text-xs text-black/40 dark:text-white/30">Unlock all premium features.</p>
+                </div>
               </div>
-            )}
+              {user?.is_premium === 1 ? (
+                <span className="text-xs font-bold text-emerald-500">Active</span>
+              ) : (
+                <Button onClick={handleUpgrade} className="text-xs py-1.5">Activate</Button>
+              )}
+            </div>
 
             <div className="p-4 rounded-2xl border border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -1843,11 +2042,9 @@ export default function App() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                {user?.is_premium === 0 && !PREMIUM_PAUSED && <span className="text-[10px] font-bold text-indigo-500 uppercase">Premium Only</span>}
-                <button 
-                  onClick={() => (user?.is_premium === 1 || PREMIUM_PAUSED) && handleToggleBackup(user.backup_enabled === 0)}
-                  disabled={user?.is_premium === 0 && !PREMIUM_PAUSED}
-                  className={`w-12 h-6 rounded-full transition-all relative ${user?.backup_enabled === 1 ? 'bg-emerald-500' : 'bg-black/10 dark:bg-white/10'} ${(user?.is_premium === 0 && !PREMIUM_PAUSED) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                <button
+                  onClick={() => handleToggleBackup(user!.backup_enabled === 0)}
+                  className={`w-12 h-6 rounded-full transition-all relative cursor-pointer ${user?.backup_enabled === 1 ? 'bg-emerald-500' : 'bg-black/10 dark:bg-white/10'}`}
                 >
                   <motion.div 
                     animate={{ x: user?.backup_enabled === 1 ? 26 : 2 }}
@@ -1881,11 +2078,49 @@ export default function App() {
                     if (pin && pin.length === 4 && /^\d+$/.test(pin)) {
                       handlePinSetup(pin);
                     } else if (pin) {
-                      alert("Invalid PIN. Please enter 4 digits.");
+                      showToast("Invalid PIN. Please enter 4 digits.", 'error');
                     }
                   }} className="text-xs py-1.5">Setup PIN</Button>
                 )}
               </div>
+            </div>
+
+            <div className="border-t border-black/5 dark:border-white/5 pt-4 mt-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="p-2 bg-black/5 dark:bg-white/5 rounded-xl"><Lock size={18} /></div>
+                <div>
+                  <p className="font-bold">Change Password</p>
+                  <p className="text-xs text-black/40 dark:text-white/30">Update your account password.</p>
+                </div>
+              </div>
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                if (isSubmitting) return;
+                setIsSubmitting(true);
+                const fd = new FormData(e.currentTarget);
+                const current_password = fd.get('current_password') as string;
+                const new_password = fd.get('new_password') as string;
+                const confirm_password = fd.get('confirm_password') as string;
+                if (new_password !== confirm_password) { showToast('Passwords do not match', 'error'); setIsSubmitting(false); return; }
+                const res = await offlineFetch('/api/user/change-password', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                  body: JSON.stringify({ current_password, new_password })
+                });
+                if (res.ok) {
+                  showToast('Password changed successfully');
+                  (e.target as HTMLFormElement).reset();
+                } else {
+                  const err = await res.json().catch(() => ({ error: 'Failed to change password' }));
+                  showToast(err.error || 'Failed to change password', 'error');
+                }
+                setIsSubmitting(false);
+              }} className="space-y-3">
+                <input name="current_password" type="password" required placeholder="Current password" className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 bg-white dark:bg-zinc-800 text-black dark:text-white text-sm" />
+                <input name="new_password" type="password" required minLength={6} placeholder="New password (min 6 chars)" className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 bg-white dark:bg-zinc-800 text-black dark:text-white text-sm" />
+                <input name="confirm_password" type="password" required minLength={6} placeholder="Confirm new password" className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 bg-white dark:bg-zinc-800 text-black dark:text-white text-sm" />
+                <Button type="submit" className="w-full py-2.5 text-sm" disabled={isSubmitting}>{isSubmitting ? 'Changing...' : 'Change Password'}</Button>
+              </form>
             </div>
           </div>
         </Card>
@@ -1905,9 +2140,16 @@ export default function App() {
                 <option value="€">Euro (€)</option>
                 <option value="£">British Pound (£)</option>
                 <option value="¥">Japanese Yen (¥)</option>
+                <option value="₩">Korean Won (₩)</option>
                 <option value="₦">Nigerian Naira (₦)</option>
                 <option value="KSh">Kenyan Shilling (KSh)</option>
                 <option value="R">South African Rand (R)</option>
+                <option value="₱">Philippine Peso (₱)</option>
+                <option value="฿">Thai Baht (฿)</option>
+                <option value="₫">Vietnamese Dong (₫)</option>
+                <option value="RM">Malaysian Ringgit (RM)</option>
+                <option value="Rp">Indonesian Rupiah (Rp)</option>
+                <option value="₸">Kazakhstani Tenge (₸)</option>
               </select>
             </div>
           </div>
@@ -1916,25 +2158,6 @@ export default function App() {
         <Card className="p-6">
           <h4 className="font-bold mb-4">Legal & Policies</h4>
           
-          {!PREMIUM_PAUSED ? (
-            <div className="mb-6 p-4 bg-amber-500/10 rounded-2xl border border-amber-500/20">
-              <p className="text-amber-600 dark:text-amber-400 font-bold mb-1 text-xs flex items-center gap-2">
-                <AlertCircle size={14} /> Razorpay Activation Notice
-              </p>
-              <p className="text-[10px] text-black/60 dark:text-white/40 leading-relaxed">
-                Razorpay accounts typically take 7 days to activate. During this period, real payments will not work. Use the <b>"Bypass for Testing"</b> button in the upgrade modal to test premium features.
-              </p>
-            </div>
-          ) : (
-            <div className="mb-6 p-4 bg-indigo-500/10 rounded-2xl border border-indigo-500/20">
-              <p className="text-indigo-600 dark:text-indigo-400 font-bold mb-1 text-xs flex items-center gap-2">
-                <Sparkles size={14} /> Premium Features Paused
-              </p>
-              <p className="text-[10px] text-black/60 dark:text-white/40 leading-relaxed">
-                We are currently activating our payment gateway. Premium features like Cloud Backup are temporarily available to all users for free during this period.
-              </p>
-            </div>
-          )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <button 
@@ -2025,7 +2248,17 @@ export default function App() {
             </div>
             <ChevronRight size={16} className="text-black/20 group-hover:translate-x-1 transition-transform" />
           </button>
-          <button 
+          <button
+            onClick={handleImportJSON}
+            className="w-full p-4 rounded-2xl border border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 transition-all text-left flex items-center justify-between group"
+          >
+            <div className="flex items-center gap-3">
+              <Cloud size={18} className="text-black/40 dark:text-white/30" />
+              <span className="font-medium">Import Data (JSON Backup)</span>
+            </div>
+            <ChevronRight size={16} className="text-black/20 group-hover:translate-x-1 transition-transform" />
+          </button>
+          <button
             onClick={() => setShowTermsModal(true)}
             className="w-full p-4 rounded-2xl border border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 transition-all text-left flex items-center justify-between group"
           >
@@ -2610,15 +2843,16 @@ export default function App() {
   const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean, onClose: () => void, title: string, children: React.ReactNode }) => (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <motion.div 
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title} onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}>
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
             className="absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-sm"
+            aria-hidden="true"
           />
-          <motion.div 
+          <motion.div
             initial={{ scale: 0.95, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: 20 }}
@@ -2626,7 +2860,7 @@ export default function App() {
           >
             <div className="p-6 border-b border-black/5 dark:border-white/5 flex justify-between items-center">
               <h3 className="text-xl font-bold">{title}</h3>
-              <button onClick={onClose} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors">
+              <button onClick={onClose} aria-label="Close dialog" className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors">
                 <X size={20} />
               </button>
             </div>
@@ -2734,7 +2968,7 @@ export default function App() {
   return (
     <div className="min-h-screen">
       {/* Sidebar / Nav */}
-      <nav className="fixed bottom-0 left-0 right-0 md:top-0 md:bottom-0 md:w-20 lg:w-64 bg-white dark:bg-zinc-900 border-t md:border-t-0 md:border-r border-black/5 dark:border-white/5 z-40 flex md:flex-col">
+      <nav aria-label="Main navigation" className="fixed bottom-0 left-0 right-0 md:top-0 md:bottom-0 md:w-20 lg:w-64 bg-white dark:bg-zinc-900 border-t md:border-t-0 md:border-r border-black/5 dark:border-white/5 z-40 flex md:flex-col">
         <div className="hidden md:flex p-6 mb-4">
           <div className="w-10 h-10 bg-black dark:bg-white rounded-xl flex items-center justify-center text-white dark:text-black font-black text-xl">L</div>
           <span className="hidden lg:block ml-3 font-black text-xl tracking-tight">LendTrack</span>
@@ -2809,6 +3043,37 @@ export default function App() {
           </div>
         </header>
 
+        <AnimatePresence>
+          {!isOnline && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="bg-amber-500 text-black px-8 py-2 flex items-center justify-center gap-2 text-xs font-bold overflow-hidden"
+            >
+              <WifiOff size={14} />
+              You are offline — viewing cached data.
+              {pendingCount > 0 && ` ${pendingCount} change${pendingCount > 1 ? 's' : ''} pending sync.`}
+            </motion.div>
+          )}
+          {isOnline && pendingCount > 0 && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="bg-emerald-500 text-white px-8 py-2 flex items-center justify-center gap-2 text-xs font-bold overflow-hidden cursor-pointer"
+              onClick={async () => {
+                await flushQueue();
+                setPendingCount(getQueue().length);
+                fetchStats(); fetchBorrowers(); fetchLoans(); fetchChitGroups();
+              }}
+            >
+              <Wifi size={14} />
+              Back online! {pendingCount} pending change{pendingCount > 1 ? 's' : ''} — tap to sync now.
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="p-6 max-w-7xl mx-auto">
           <AnimatePresence mode="wait">
             <motion.div
@@ -2860,14 +3125,14 @@ export default function App() {
                         setRecoveryError('');
                         const email = (e.currentTarget.elements.namedItem('email') as HTMLInputElement).value;
                         try {
-                          const res = await fetch('/api/auth/recovery/find-username', {
+                          const res = await offlineFetch('/api/auth/recovery/find-username', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ email })
                           });
                           const result = await res.json();
                           if (res.ok) {
-                            alert(`Your username is: ${result.username}`);
+                            showToast(`Your username is: ${result.username}`);
                           } else {
                             setRecoveryError(result.error);
                           }
@@ -3026,13 +3291,36 @@ export default function App() {
               className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 transition-all bg-white dark:bg-zinc-800 text-black dark:text-white min-h-[100px]" 
             />
           </div>
-          <Button type="submit" className="w-full py-3">Save Borrower</Button>
+          <Button type="submit" className="w-full py-3" disabled={isSubmitting}>{isSubmitting ? 'Saving...' : 'Save Borrower'}</Button>
         </form>
       </Modal>
 
-      <Modal 
-        isOpen={showLoanModal} 
-        onClose={() => setShowLoanModal(false)} 
+      <Modal
+        isOpen={showEditBorrowerModal}
+        onClose={() => { setShowEditBorrowerModal(false); setEditingBorrower(null); }}
+        title="Edit Borrower"
+      >
+        {editingBorrower && (
+          <form onSubmit={handleEditBorrower} className="space-y-4">
+            <Input label="Full Name" name="name" required defaultValue={editingBorrower.name} />
+            <Input label="Phone Number" name="phone" required defaultValue={editingBorrower.phone} />
+            <Input label="Address" name="address" defaultValue={editingBorrower.address} />
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold uppercase tracking-wider text-black/50 dark:text-white/40 ml-1">Notes</label>
+              <textarea
+                name="notes"
+                defaultValue={editingBorrower.notes || ''}
+                className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 transition-all bg-white dark:bg-zinc-800 text-black dark:text-white min-h-[100px]"
+              />
+            </div>
+            <Button type="submit" className="w-full py-3" disabled={isSubmitting}>{isSubmitting ? 'Saving...' : 'Update Borrower'}</Button>
+          </form>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={showLoanModal}
+        onClose={() => setShowLoanModal(false)}
         title="Create New Loan"
       >
         <form onSubmit={handleCreateLoan} className="space-y-4">
@@ -3092,7 +3380,7 @@ export default function App() {
             <Input label="Duration (Optional)" name="duration" type="number" placeholder="12" />
           </div>
           <p className="text-[10px] text-black/40 italic">* For Installment plans, set the fixed amount per day/week. For Interest Only, set the rate.</p>
-          <Button type="submit" className="w-full py-3">Create Loan</Button>
+          <Button type="submit" className="w-full py-3" disabled={isSubmitting}>{isSubmitting ? 'Creating...' : 'Create Loan'}</Button>
         </form>
       </Modal>
 
@@ -3159,7 +3447,7 @@ export default function App() {
               ]} 
             />
           </div>
-          <Button type="submit" className="w-full py-3">Update Loan</Button>
+          <Button type="submit" className="w-full py-3" disabled={isSubmitting}>{isSubmitting ? 'Updating...' : 'Update Loan'}</Button>
         </form>
       </Modal>
 
@@ -3187,11 +3475,11 @@ export default function App() {
           <Input label={`Payment Amount (${user?.currency || '₹'})`} name="amount" type="number" required placeholder="200" />
           <Input label="Payment Date" name="payment_date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} />
           <Input label="Notes" name="notes" placeholder="Cash payment" />
-          <Button type="submit" className="w-full py-3">Record Payment</Button>
+          <Button type="submit" className="w-full py-3" disabled={isSubmitting}>{isSubmitting ? 'Recording...' : 'Record Payment'}</Button>
         </form>
       </Modal>
 
-      <Modal 
+      <Modal
         isOpen={showCapitalModal} 
         onClose={() => setShowCapitalModal(false)} 
         title="Update Total Capital"
@@ -3267,7 +3555,7 @@ export default function App() {
 
           <section>
             <h4 className="font-bold text-black dark:text-white mb-1 uppercase tracking-wider">3. Data Sharing</h4>
-            <p>We do not sell or share your personal data with third parties, except as required by law or to process payments via our payment gateway partners (Razorpay).</p>
+            <p>We do not sell or share your personal data with third parties, except as required by law.</p>
           </section>
 
           <section>
@@ -3434,8 +3722,8 @@ export default function App() {
                     <h2 className="text-3xl font-black">{viewingBorrowerProfile.name}</h2>
                     <p className="text-black/40 dark:text-white/30 font-mono">Borrower ID: #{viewingBorrowerProfile.id}</p>
                     <div className="flex gap-2 mt-3">
-                      <Button variant="secondary" className="text-xs py-1.5"><Edit2 size={14} /> Edit</Button>
-                      <Button variant="danger" className="text-xs py-1.5"><Trash2 size={14} /> Delete</Button>
+                      <Button variant="secondary" className="text-xs py-1.5" onClick={() => openEditBorrower(viewingBorrowerProfile)}><Edit2 size={14} /> Edit</Button>
+                      <Button variant="danger" className="text-xs py-1.5" onClick={() => handleDeleteBorrower(viewingBorrowerProfile)}><Trash2 size={14} /> Delete</Button>
                     </div>
                   </div>
                 </motion.div>
@@ -3553,6 +3841,24 @@ export default function App() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className={`fixed bottom-6 right-6 z-[200] px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${
+              toast.type === 'error'
+                ? 'bg-red-600 text-white'
+                : 'bg-emerald-600 text-white'
+            }`}
+          >
+            {toast.message}
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

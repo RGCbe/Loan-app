@@ -7,28 +7,12 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
 import { rateLimit } from "express-rate-limit";
-import Razorpay from "razorpay";
-import crypto from "crypto";
-
 dotenv.config();
 
-const JWT_SECRET = process.env.JWT_SECRET || "REDACTED";
-
-// Razorpay Initialization
-let razorpayInstance: Razorpay | null = null;
-function getRazorpay(): Razorpay {
-  if (!razorpayInstance) {
-    const keyId = process.env.RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
-    if (!keyId || !keySecret) {
-      throw new Error("RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET environment variables are required");
-    }
-    razorpayInstance = new Razorpay({
-      key_id: keyId,
-      key_secret: keySecret,
-    });
-  }
-  return razorpayInstance;
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error("FATAL: JWT_SECRET environment variable is required. Set it in .env file.");
+  process.exit(1);
 }
 
 // Extend Express Request type to include user
@@ -264,69 +248,44 @@ async function startServer() {
   app.set("trust proxy", 1);
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
-  // Razorpay Webhook
-  app.post("/api/razorpay/webhook", express.json(), async (req, res) => {
-    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
-    const signature = req.headers["x-razorpay-signature"] as string;
-
-    if (!secret || !signature) {
-      return res.status(400).send("Webhook Error: Missing signature or secret");
-    }
-
-    const body = JSON.stringify(req.body);
-    const expectedSignature = crypto
-      .createHmac("sha256", secret)
-      .update(body)
-      .digest("hex");
-
-    if (expectedSignature !== signature) {
-      return res.status(400).send("Webhook Error: Invalid signature");
-    }
-
-    const event = req.body;
-    if (event.event === "payment.captured") {
-      const payment = event.payload.payment.entity;
-      const userId = payment.notes.userId;
-      const planType = payment.notes.planType;
-
-      if (userId) {
-        let premiumUntil: string | null = null;
-        const now = new Date();
-        
-        if (planType === "monthly") {
-          now.setMonth(now.getMonth() + 1);
-          premiumUntil = now.toISOString();
-        } else if (planType === "yearly") {
-          now.setFullYear(now.getFullYear() + 1);
-          premiumUntil = now.toISOString();
-        } else if (planType === "lifetime") {
-          premiumUntil = "9999-12-31T23:59:59.999Z";
-        }
-
-        db.prepare("UPDATE users SET is_premium = 1, premium_until = ? WHERE id = ?").run(premiumUntil, userId);
-        logActivity(parseInt(userId), "Upgrade Account", `Account upgraded via Razorpay (${planType})`);
-      }
-    }
-
-    res.json({ status: "ok" });
-  });
-
   app.use(express.json());
 
   // --- Security: Rate Limiting ---
   const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    limit: 10, // Limit each IP to 10 requests per windowMs
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
-    keyGenerator: (req) => {
-      return (req.headers['x-forwarded-for'] as string) || 
-             (req.headers['forwarded'] as string) || 
-             req.ip || 
-             'unknown';
-    },
     message: { error: "Too many login attempts. Please try again in 15 minutes." }
   });
+
+  const apiLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    limit: 100,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: "Too many requests. Please slow down." }
+  });
+
+  const pinLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 5,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: "Too many PIN attempts. Locked for 15 minutes." }
+  });
+
+  // Apply general rate limit to all API routes
+  app.use("/api/", apiLimiter);
+
+  // --- Input Validation Helpers ---
+  const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const isNumericPin = (pin: string) => /^\d{4}$/.test(pin);
+  const VALID_CURRENCIES = ['₹', '$', '€', '£', '¥', '₩', '฿', '₫', '₱', '₸', 'RM', 'Rp', '₦', 'KSh', 'R'];
+  const VALID_INTEREST_TYPES = ['Daily', 'Weekly', 'Monthly'];
+  const VALID_LOAN_TYPES = ['Interest Only', 'Installment'];
+  const VALID_DIRECTIONS = ['Lent', 'Borrowed'];
+  const VALID_STATUSES = ['Active', 'Closed'];
 
   // --- Auth Middleware ---
   const authenticateToken = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -344,7 +303,13 @@ async function startServer() {
 
   // --- Auth Routes ---
   app.post("/api/auth/signup", authLimiter, async (req, res) => {
-    const { username, password, email, recovery_question, recovery_answer, terms_accepted } = req.body;
+    let { username, password, email, recovery_question, recovery_answer, terms_accepted } = req.body;
+    if (!username || !password) return res.status(400).json({ error: "Username and password are required." });
+    if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
+    if (email && !isValidEmail(email)) return res.status(400).json({ error: "Invalid email format." });
+    if (!username.endsWith("@metrix")) {
+      username = `${username}@metrix`;
+    }
     try {
       if (!terms_accepted) {
         return res.status(400).json({ error: "You must accept the Terms and Conditions." });
@@ -377,7 +342,10 @@ async function startServer() {
   });
 
   app.post("/api/auth/login", authLimiter, async (req, res) => {
-    const { username, password } = req.body;
+    let { username, password } = req.body;
+    if (!username.endsWith("@metrix")) {
+      username = `${username}@metrix`;
+    }
     try {
       const user = db.prepare("SELECT * FROM users WHERE username = ? OR email = ?").get(username, username) as any;
       if (!user) return res.status(400).json({ error: "User not found." });
@@ -411,103 +379,47 @@ async function startServer() {
   // Recovery Routes
   app.post("/api/auth/recovery/find-username", authLimiter, (req, res) => {
     const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email is required." });
     const user = db.prepare("SELECT username FROM users WHERE email = ?").get(email) as any;
-    if (!user) return res.status(404).json({ error: "No account found with this email." });
+    if (!user) return res.status(404).json({ error: "Recovery not available for this account." });
     res.json({ username: user.username });
   });
 
   app.post("/api/auth/recovery/get-question", authLimiter, (req, res) => {
     const { identifier } = req.body; // username or email
+    if (!identifier) return res.status(400).json({ error: "Username or email is required." });
     const user = db.prepare("SELECT recovery_question FROM users WHERE username = ? OR email = ?").get(identifier, identifier) as any;
-    if (!user || !user.recovery_question) return res.status(404).json({ error: "Recovery not setup for this account." });
+    if (!user || !user.recovery_question) return res.status(404).json({ error: "Recovery not available for this account." });
     res.json({ question: user.recovery_question });
   });
 
   app.post("/api/auth/recovery/reset-password", authLimiter, async (req, res) => {
     const { identifier, answer, newPassword } = req.body;
+    if (!identifier || !answer || !newPassword) return res.status(400).json({ error: "All fields are required." });
+    if (newPassword.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
     const user = db.prepare("SELECT id, recovery_answer FROM users WHERE username = ? OR email = ?").get(identifier, identifier) as any;
-    
-    if (!user || !user.recovery_answer) return res.status(404).json({ error: "Recovery not setup." });
-    
+
+    // Generic error to prevent enumeration
+    if (!user || !user.recovery_answer) return res.status(401).json({ error: "Recovery failed. Check your details and try again." });
+
     const valid = await bcrypt.compare(answer.toLowerCase().trim(), user.recovery_answer);
-    if (!valid) return res.status(401).json({ error: "Incorrect answer." });
-    
+    if (!valid) return res.status(401).json({ error: "Recovery failed. Check your details and try again." });
+
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     db.prepare("UPDATE users SET password = ? WHERE id = ?").run(hashedPassword, user.id);
-    
+
     logActivity(user.id, "Password Reset", "Password reset via security question");
     res.json({ success: true });
   });
 
-  app.get("/api/razorpay/key", (req, res) => {
-    res.json({ keyId: process.env.RAZORPAY_KEY_ID });
-  });
-
-  app.post("/api/razorpay/order", authenticateToken, async (req: AuthenticatedRequest, res) => {
-    try {
-      const userId = req.user!.id;
-      const { planType } = req.body;
-      
-      let amount = 0;
-      if (planType === "monthly") amount = 10000; // ₹100.00
-      else if (planType === "yearly") amount = 100000; // ₹1000.00
-      else if (planType === "lifetime") amount = 499900; // ₹4999.00
-      else return res.status(400).json({ error: "Invalid plan type" });
-
-      const options = {
-        amount: amount,
-        currency: "INR",
-        receipt: `receipt_${userId}_${Date.now()}`,
-        notes: {
-          userId: userId.toString(),
-          planType: planType
-        }
-      };
-
-      const order = await getRazorpay().orders.create(options);
-      res.json(order);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/razorpay/verify", authenticateToken, async (req: AuthenticatedRequest, res) => {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, planType } = req.body;
-    const userId = req.user!.id;
-    const secret = process.env.RAZORPAY_KEY_SECRET;
-
-    if (!secret) return res.status(500).json({ error: "Server configuration error" });
-
-    const body = razorpay_order_id + "|" + razorpay_payment_id;
-    const expectedSignature = crypto
-      .createHmac("sha256", secret)
-      .update(body.toString())
-      .digest("hex");
-
-    if (expectedSignature === razorpay_signature) {
-      let premiumUntil: string | null = null;
-      const now = new Date();
-      
-      if (planType === "monthly") {
-        now.setMonth(now.getMonth() + 1);
-        premiumUntil = now.toISOString();
-      } else if (planType === "yearly") {
-        now.setFullYear(now.getFullYear() + 1);
-        premiumUntil = now.toISOString();
-      } else if (planType === "lifetime") {
-        premiumUntil = "9999-12-31T23:59:59.999Z";
-      }
-
-      db.prepare("UPDATE users SET is_premium = 1, premium_until = ? WHERE id = ?").run(premiumUntil, userId);
-      logActivity(userId, "Upgrade Account", `Account upgraded via Razorpay (${planType})`);
-      res.json({ success: true });
-    } else {
-      res.status(400).json({ error: "Invalid signature" });
-    }
-  });
-
   app.post("/api/user/upgrade", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
+    const { payment_token } = req.body;
+    // Require a valid payment token from a payment gateway (Stripe, Google Play, etc.)
+    if (!payment_token) {
+      return res.status(402).json({ error: "Payment required. Please complete the payment flow." });
+    }
+    // TODO: Verify payment_token with payment provider before upgrading
     db.prepare("UPDATE users SET is_premium = 1 WHERE id = ?").run(userId);
     logActivity(userId, "Upgrade Account", "Account upgraded to premium");
     res.json({ success: true });
@@ -531,6 +443,62 @@ async function startServer() {
     });
   });
 
+  app.post("/api/user/import", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const { borrowers, loans, payments } = req.body;
+
+    if (!borrowers || !Array.isArray(borrowers)) return res.status(400).json({ error: "Invalid backup: missing borrowers array" });
+    if (!loans || !Array.isArray(loans)) return res.status(400).json({ error: "Invalid backup: missing loans array" });
+    if (!payments || !Array.isArray(payments)) return res.status(400).json({ error: "Invalid backup: missing payments array" });
+
+    const transaction = db.transaction(() => {
+      const borrowerIdMap = new Map<number, number>();
+      const loanIdMap = new Map<number, number>();
+
+      for (const b of borrowers) {
+        const name = (b.name || '').trim();
+        if (!name) continue;
+        const result = db.prepare("INSERT INTO borrowers (user_id, name, phone, address, notes) VALUES (?, ?, ?, ?, ?)").run(
+          userId, name, b.phone || '', b.address || '', b.notes || ''
+        );
+        borrowerIdMap.set(b.id, Number(result.lastInsertRowid));
+      }
+
+      for (const l of loans) {
+        const newBorrowerId = borrowerIdMap.get(l.borrower_id);
+        if (!newBorrowerId) continue;
+        const result = db.prepare(
+          "INSERT INTO loans (user_id, borrower_id, amount, given_amount, loan_type, direction, interest_type, interest_rate, installment_amount, start_date, duration, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        ).run(
+          userId, newBorrowerId, l.amount || 0, l.given_amount || 0,
+          l.loan_type || 'Interest Only', l.direction || 'Lent',
+          l.interest_type || 'Monthly', l.interest_rate || 0,
+          l.installment_amount || null, l.start_date || new Date().toISOString().split('T')[0],
+          l.duration || null, l.status || 'Active'
+        );
+        loanIdMap.set(l.id, Number(result.lastInsertRowid));
+      }
+
+      for (const p of payments) {
+        const newLoanId = loanIdMap.get(p.loan_id);
+        if (!newLoanId) continue;
+        db.prepare(
+          "INSERT INTO payments (user_id, loan_id, amount, payment_date, notes) VALUES (?, ?, ?, ?, ?)"
+        ).run(userId, newLoanId, p.amount || 0, p.payment_date || new Date().toISOString().split('T')[0], p.notes || '');
+      }
+
+      logActivity(userId, "Import Data", `Imported ${borrowers.length} borrowers, ${loans.length} loans, ${payments.length} payments`);
+    });
+
+    try {
+      transaction();
+      res.json({ success: true, message: "Data imported successfully" });
+    } catch (err: any) {
+      console.error("Import error:", err);
+      res.status(500).json({ error: "Failed to import data" });
+    }
+  });
+
   app.delete("/api/user/account", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
     db.prepare("DELETE FROM activity_log WHERE user_id = ?").run(userId);
@@ -549,9 +517,28 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  app.post("/api/user/change-password", authenticateToken, authLimiter, async (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const { current_password, new_password } = req.body;
+    if (!current_password || !new_password) return res.status(400).json({ error: "Current and new password are required" });
+    if (new_password.length < 6) return res.status(400).json({ error: "New password must be at least 6 characters" });
+
+    const user = db.prepare("SELECT password FROM users WHERE id = ?").get(userId) as any;
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const valid = await bcrypt.compare(current_password, user.password);
+    if (!valid) return res.status(401).json({ error: "Current password is incorrect" });
+
+    const hashed = await bcrypt.hash(new_password, 10);
+    db.prepare("UPDATE users SET password = ? WHERE id = ?").run(hashed, userId);
+    logActivity(userId, "Change Password", "Password changed successfully");
+    res.json({ success: true });
+  });
+
   app.post("/api/user/currency", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
     const { currency } = req.body;
+    if (!currency || !VALID_CURRENCIES.includes(currency)) return res.status(400).json({ error: "Invalid currency. Supported: " + VALID_CURRENCIES.join(', ') });
     db.prepare("UPDATE users SET currency = ? WHERE id = ?").run(currency, userId);
     logActivity(userId, "Update Currency", `Currency changed to ${currency}`);
     res.json({ success: true });
@@ -561,7 +548,7 @@ async function startServer() {
   app.post("/api/user/pin/setup", authenticateToken, async (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
     const { pin } = req.body;
-    if (!pin || pin.length !== 4) return res.status(400).json({ error: "PIN must be 4 digits" });
+    if (!pin || !isNumericPin(pin)) return res.status(400).json({ error: "PIN must be exactly 4 digits (0-9)" });
     
     const hashedPin = await bcrypt.hash(pin, 10);
     db.prepare("UPDATE users SET pin_hash = ?, pin_enabled = 1 WHERE id = ?").run(hashedPin, userId);
@@ -569,7 +556,7 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  app.post("/api/user/pin/verify", authenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/user/pin/verify", pinLimiter, authenticateToken, async (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
     const { pin } = req.body;
     const user = db.prepare("SELECT pin_hash FROM users WHERE id = ?").get(userId) as any;
@@ -748,16 +735,23 @@ async function startServer() {
   app.post("/api/borrowers", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
     const { name, phone, address, notes } = req.body;
-    const info = db.prepare("INSERT INTO borrowers (user_id, name, phone, address, notes) VALUES (?, ?, ?, ?, ?)").run(userId, name, phone, address, notes);
+    if (!name || !name.trim()) return res.status(400).json({ error: "Borrower name is required." });
+    const info = db.prepare("INSERT INTO borrowers (user_id, name, phone, address, notes) VALUES (?, ?, ?, ?, ?)").run(userId, name.trim(), phone, address, notes);
     logActivity(userId, "Add Borrower", `Added borrower: ${name}`);
     res.json({ id: info.lastInsertRowid });
   });
 
   app.put("/api/borrowers/:id", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
+    const borrowerId = parseInt(req.params.id);
+    if (isNaN(borrowerId)) return res.status(400).json({ error: "Invalid borrower ID" });
     const { name, phone, address, notes } = req.body;
-    db.prepare("UPDATE borrowers SET name = ?, phone = ?, address = ?, notes = ? WHERE id = ? AND user_id = ?").run(name, phone, address, notes, req.params.id, userId);
-    logActivity(userId, "Update Borrower", `Updated borrower: ${name} (ID: ${req.params.id})`);
+    if (!name || !name.trim()) return res.status(400).json({ error: "Name is required" });
+    const trimmedName = name.trim();
+    const existing = db.prepare("SELECT id FROM borrowers WHERE id = ? AND user_id = ?").get(borrowerId, userId);
+    if (!existing) return res.status(404).json({ error: "Borrower not found" });
+    db.prepare("UPDATE borrowers SET name = ?, phone = ?, address = ?, notes = ? WHERE id = ? AND user_id = ?").run(trimmedName, phone || '', address || '', notes || '', borrowerId, userId);
+    logActivity(userId, "Update Borrower", `Updated borrower: ${trimmedName} (ID: ${borrowerId})`);
     res.json({ success: true });
   });
 
@@ -790,6 +784,17 @@ async function startServer() {
   app.post("/api/loans", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
     const { borrower_id, amount, given_amount, loan_type, direction, interest_type, interest_rate, installment_amount, start_date, duration } = req.body;
+    if (!borrower_id) return res.status(400).json({ error: "Borrower is required." });
+    if (!amount || amount <= 0) return res.status(400).json({ error: "Amount must be positive." });
+    if (!given_amount || given_amount <= 0) return res.status(400).json({ error: "Given amount must be positive." });
+    if (interest_rate < 0 || interest_rate > 100) return res.status(400).json({ error: "Interest rate must be between 0 and 100." });
+    if (!interest_type || !VALID_INTEREST_TYPES.includes(interest_type)) return res.status(400).json({ error: "Interest type must be Daily, Weekly, or Monthly." });
+    if (loan_type && !VALID_LOAN_TYPES.includes(loan_type)) return res.status(400).json({ error: "Loan type must be 'Interest Only' or 'Installment'." });
+    if (direction && !VALID_DIRECTIONS.includes(direction)) return res.status(400).json({ error: "Direction must be 'Lent' or 'Borrowed'." });
+    if (!start_date) return res.status(400).json({ error: "Start date is required." });
+    // Verify borrower belongs to user
+    const borrower = db.prepare("SELECT id FROM borrowers WHERE id = ? AND user_id = ?").get(borrower_id, userId);
+    if (!borrower) return res.status(404).json({ error: "Borrower not found." });
     const info = db.prepare(`
       INSERT INTO loans(user_id, borrower_id, amount, given_amount, loan_type, direction, interest_type, interest_rate, installment_amount, start_date, duration)
 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -800,45 +805,38 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
   app.put("/api/loans/:id", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
-    const {
-      amount,
-      given_amount,
-      loan_type,
-      direction,
-      interest_type,
-      interest_rate,
-      installment_amount,
-      start_date,
-      duration,
-      status
-    } = req.body;
+    const existing = db.prepare("SELECT * FROM loans WHERE id = ? AND user_id = ?").get(req.params.id, userId) as any;
+    if (!existing) return res.status(404).json({ error: "Loan not found" });
+
+    const amount = req.body.amount ?? existing.amount;
+    const given_amount = req.body.given_amount ?? existing.given_amount;
+    const loan_type = req.body.loan_type ?? existing.loan_type;
+    const direction = req.body.direction ?? existing.direction;
+    const interest_type = req.body.interest_type ?? existing.interest_type;
+    const interest_rate = req.body.interest_rate ?? existing.interest_rate;
+    const installment_amount = req.body.installment_amount ?? existing.installment_amount;
+    const start_date = req.body.start_date ?? existing.start_date;
+    const duration = req.body.duration ?? existing.duration;
+    const status = req.body.status ?? existing.status;
+
+    if (req.body.interest_type && !VALID_INTEREST_TYPES.includes(req.body.interest_type)) return res.status(400).json({ error: "Invalid interest type." });
+    if (req.body.loan_type && !VALID_LOAN_TYPES.includes(req.body.loan_type)) return res.status(400).json({ error: "Invalid loan type." });
+    if (req.body.direction && !VALID_DIRECTIONS.includes(req.body.direction)) return res.status(400).json({ error: "Invalid direction." });
+    if (req.body.status && !VALID_STATUSES.includes(req.body.status)) return res.status(400).json({ error: "Status must be Active or Closed." });
+    if (req.body.amount !== undefined && req.body.amount <= 0) return res.status(400).json({ error: "Amount must be positive." });
+    if (req.body.interest_rate !== undefined && (req.body.interest_rate < 0 || req.body.interest_rate > 100)) return res.status(400).json({ error: "Interest rate must be 0-100." });
 
     db.prepare(`
-      UPDATE loans 
-      SET amount = ?,
-  given_amount = ?,
-  loan_type = ?,
-  direction = ?,
-  interest_type = ?,
-  interest_rate = ?,
-  installment_amount = ?,
-  start_date = ?,
-  duration = ?,
-  status = ?
-    WHERE id = ? AND user_id = ?
-      `).run(
-      amount,
-      given_amount,
-      loan_type,
-      direction,
-      interest_type,
-      interest_rate,
-      installment_amount,
-      start_date,
-      duration,
-      status,
-      req.params.id,
-      userId
+      UPDATE loans
+      SET amount = ?, given_amount = ?, loan_type = ?, direction = ?,
+          interest_type = ?, interest_rate = ?, installment_amount = ?,
+          start_date = ?, duration = ?, status = ?
+      WHERE id = ? AND user_id = ?
+    `).run(
+      amount, given_amount, loan_type, direction,
+      interest_type, interest_rate, installment_amount,
+      start_date, duration, status,
+      req.params.id, userId
     );
     logActivity(userId, "Update Loan", `Updated loan ID: ${req.params.id} (Status: ${status})`);
     res.json({ success: true });
@@ -854,6 +852,12 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   app.post("/api/payments", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
     const { loan_id, amount, payment_date, notes } = req.body;
+    if (!loan_id) return res.status(400).json({ error: "Loan ID is required." });
+    if (!amount || amount <= 0) return res.status(400).json({ error: "Payment amount must be positive." });
+    if (!payment_date) return res.status(400).json({ error: "Payment date is required." });
+    // Verify loan belongs to user
+    const loan = db.prepare("SELECT id FROM loans WHERE id = ? AND user_id = ?").get(loan_id, userId);
+    if (!loan) return res.status(404).json({ error: "Loan not found." });
     const info = db.prepare("INSERT INTO payments (user_id, loan_id, amount, payment_date, notes) VALUES (?, ?, ?, ?, ?)").run(userId, loan_id, amount, payment_date, notes);
     logActivity(userId, "Record Payment", `Recorded payment of ${amount} for loan ID: ${loan_id}`);
     res.json({ id: info.lastInsertRowid });
@@ -928,6 +932,12 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   app.post("/api/chit-groups", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
     const { name, total_value, members_count, duration_months, monthly_contribution, commission_percent, start_date } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: "Group name is required." });
+    if (!total_value || total_value <= 0) return res.status(400).json({ error: "Total value must be positive." });
+    if (!members_count || members_count < 2) return res.status(400).json({ error: "Must have at least 2 members." });
+    if (!duration_months || duration_months < 1) return res.status(400).json({ error: "Duration must be at least 1 month." });
+    if (!monthly_contribution || monthly_contribution <= 0) return res.status(400).json({ error: "Monthly contribution must be positive." });
+    if (!start_date) return res.status(400).json({ error: "Start date is required." });
     const info = db.prepare(`
       INSERT INTO chit_groups (user_id, name, total_value, members_count, duration_months, monthly_contribution, commission_percent, start_date)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -950,12 +960,19 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
   app.post("/api/chit-groups/:id/members", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
+    const groupId = parseInt(req.params.id);
+    if (isNaN(groupId)) return res.status(400).json({ error: "Invalid group ID" });
+    const group = db.prepare("SELECT id FROM chit_groups WHERE id = ? AND user_id = ?").get(groupId, userId);
+    if (!group) return res.status(404).json({ error: "Chit group not found" });
     const { borrower_id, slot_number } = req.body;
+    if (!borrower_id || !slot_number) return res.status(400).json({ error: "Borrower and slot number are required" });
+    const borrower = db.prepare("SELECT id FROM borrowers WHERE id = ? AND user_id = ?").get(borrower_id, userId);
+    if (!borrower) return res.status(404).json({ error: "Borrower not found" });
     const info = db.prepare(`
       INSERT INTO chit_members (user_id, chit_group_id, borrower_id, slot_number)
       VALUES (?, ?, ?, ?)
-    `).run(userId, req.params.id, borrower_id, slot_number);
-    logActivity(userId, "Add Chit Member", `Added member to chit group ID: ${req.params.id}`);
+    `).run(userId, groupId, borrower_id, slot_number);
+    logActivity(userId, "Add Chit Member", `Added member to chit group ID: ${groupId}`);
     res.json({ id: info.lastInsertRowid });
   });
 
@@ -974,19 +991,29 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
   app.post("/api/chit-groups/:id/auctions", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
+    const groupId = parseInt(req.params.id);
+    if (isNaN(groupId)) return res.status(400).json({ error: "Invalid group ID" });
+    const group = db.prepare("SELECT id FROM chit_groups WHERE id = ? AND user_id = ?").get(groupId, userId);
+    if (!group) return res.status(404).json({ error: "Chit group not found" });
     const { month_number, auction_date, winner_member_id, bid_amount, payout_amount, dividend_per_member } = req.body;
-    
-    db.transaction(() => {
-      const info = db.prepare(`
-        INSERT INTO chit_auctions (user_id, chit_group_id, month_number, auction_date, winner_member_id, bid_amount, payout_amount, dividend_per_member)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(userId, req.params.id, month_number, auction_date, winner_member_id, bid_amount, payout_amount, dividend_per_member);
+    if (!month_number || !auction_date || !winner_member_id) return res.status(400).json({ error: "Month, date, and winner are required" });
+    if (bid_amount <= 0 || payout_amount <= 0) return res.status(400).json({ error: "Amounts must be positive" });
 
-      db.prepare("UPDATE chit_members SET has_won_auction = 1, auction_won_month = ? WHERE id = ?").run(month_number, winner_member_id);
-    })();
+    try {
+      db.transaction(() => {
+        db.prepare(`
+          INSERT INTO chit_auctions (user_id, chit_group_id, month_number, auction_date, winner_member_id, bid_amount, payout_amount, dividend_per_member)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(userId, groupId, month_number, auction_date, winner_member_id, bid_amount, payout_amount, dividend_per_member);
 
-    logActivity(userId, "Record Auction", `Recorded auction for month ${month_number} in chit group ID: ${req.params.id}`);
-    res.json({ success: true });
+        db.prepare("UPDATE chit_members SET has_won_auction = 1, auction_won_month = ? WHERE id = ?").run(month_number, winner_member_id);
+      })();
+
+      logActivity(userId, "Record Auction", `Recorded auction for month ${month_number} in chit group ID: ${groupId}`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to record auction" });
+    }
   });
 
   app.get("/api/chit-groups/:id/payments", authenticateToken, (req: AuthenticatedRequest, res) => {
@@ -998,6 +1025,10 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   app.post("/api/chit-payments", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
     const { chit_group_id, chit_member_id, month_number, amount, payment_date } = req.body;
+    if (!chit_group_id || !chit_member_id || !month_number || !payment_date) return res.status(400).json({ error: "All fields are required" });
+    if (!amount || amount <= 0) return res.status(400).json({ error: "Amount must be positive" });
+    const group = db.prepare("SELECT id FROM chit_groups WHERE id = ? AND user_id = ?").get(chit_group_id, userId);
+    if (!group) return res.status(404).json({ error: "Chit group not found" });
     const info = db.prepare(`
       INSERT INTO chit_payments (user_id, chit_group_id, chit_member_id, month_number, amount, payment_date)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -1007,8 +1038,15 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
   app.post("/api/chit-payments/bulk", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
-    const { chit_group_id, payments, month_number, payment_date } = req.body; // payments: [{ chit_member_id, amount }]
-    
+    const { chit_group_id, payments, month_number, payment_date } = req.body;
+    if (!chit_group_id || !month_number || !payment_date) return res.status(400).json({ error: "Group, month, and date are required" });
+    if (!payments || !Array.isArray(payments) || payments.length === 0) return res.status(400).json({ error: "Payments array is required" });
+    const group = db.prepare("SELECT id FROM chit_groups WHERE id = ? AND user_id = ?").get(chit_group_id, userId);
+    if (!group) return res.status(404).json({ error: "Chit group not found" });
+    for (const p of payments) {
+      if (!p.amount || p.amount <= 0) return res.status(400).json({ error: "All payment amounts must be positive" });
+    }
+
     try {
       db.transaction(() => {
         for (const p of payments) {
