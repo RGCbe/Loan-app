@@ -40,7 +40,8 @@ import {
   UsersRound,
   Gavel,
   Coins,
-  CircleDollarSign
+  CircleDollarSign,
+  LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Borrower, Loan, Payment, Stats, User, ActivityLog, ChitGroup, ChitMember, ChitAuction, ChitPayment } from './types';
@@ -242,6 +243,13 @@ export default function App() {
   const [isLogin, setIsLogin] = useState(true);
   const [authError, setAuthError] = useState('');
 
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  useEffect(() => {
+    if (!showUserMenu) return;
+    const close = () => setShowUserMenu(false);
+    const timer = setTimeout(() => document.addEventListener('click', close), 0);
+    return () => { clearTimeout(timer); document.removeEventListener('click', close); };
+  }, [showUserMenu]);
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('darkMode');
@@ -3051,16 +3059,56 @@ export default function App() {
               <Calendar size={14} className="text-black/30 dark:text-white/20" /> {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
             </div>
 
-            <motion.div 
-              whileHover={{ scale: 1.05 }}
-              onClick={handleLogout}
-              className="w-10 h-10 rounded-full bg-black dark:bg-white text-white dark:text-black border border-black/5 dark:border-white/5 flex items-center justify-center font-black text-xs cursor-pointer shadow-lg group relative"
-            >
-              {user?.username?.[0].toUpperCase() || 'U'}
-              <div className="absolute -bottom-12 right-0 bg-white dark:bg-zinc-800 border border-black/5 dark:border-white/5 px-3 py-1.5 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
-                <p className="text-[10px] font-bold text-red-500 uppercase">Click to Logout</p>
-              </div>
-            </motion.div>
+            <div className="relative">
+              <motion.div
+                whileHover={{ scale: 1.05 }}
+                onClick={() => setShowUserMenu(prev => !prev)}
+                className="w-10 h-10 rounded-full bg-black dark:bg-white text-white dark:text-black border border-black/5 dark:border-white/5 flex items-center justify-center font-black text-xs cursor-pointer shadow-lg"
+              >
+                {user?.username?.[0].toUpperCase() || 'U'}
+              </motion.div>
+              <AnimatePresence>
+                {showUserMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute top-12 right-0 w-64 bg-white dark:bg-zinc-900 border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden"
+                  >
+                    <div className="p-4 border-b border-black/5 dark:border-white/5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-black dark:bg-white text-white dark:text-black flex items-center justify-center font-black text-sm">
+                          {user?.username?.[0].toUpperCase() || 'U'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold truncate">{user?.username}</p>
+                          <p className="text-[10px] text-black/40 dark:text-white/40 uppercase tracking-wider">
+                            {user?.is_premium === 1 ? 'Premium Account' : 'Free Account'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-2">
+                      <button
+                        onClick={() => { setShowUserMenu(false); setActiveTab('settings'); }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-medium hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+                      >
+                        <Settings size={16} className="text-black/50 dark:text-white/50" />
+                        Account Settings
+                      </button>
+                      <button
+                        onClick={() => { setShowUserMenu(false); handleLogout(); }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors cursor-pointer"
+                      >
+                        <LogOut size={16} />
+                        Logout
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </header>
 
