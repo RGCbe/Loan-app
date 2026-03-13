@@ -32,14 +32,20 @@ import {
   Sparkles,
   ExternalLink,
   Lock,
-  Smartphone
+  Smartphone,
+  UsersRound,
+  Gavel,
+  Coins,
+  CircleDollarSign
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Borrower, Loan, Payment, Stats, User, ActivityLog } from './types';
+import { Borrower, Loan, Payment, Stats, User, ActivityLog, ChitGroup, ChitMember, ChitAuction, ChitPayment } from './types';
 import { FinancialVisualizer } from './components/ThreeVisuals';
 
+const PREMIUM_PAUSED = true;
+
 const AdComponent = ({ isPremium, onUpgrade }: { isPremium: boolean, onUpgrade: () => void }) => {
-  if (isPremium) return null;
+  if (isPremium || PREMIUM_PAUSED) return null;
   
   return (
     <Card className="p-4 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border-indigo-500/20 relative overflow-hidden group mb-6">
@@ -249,11 +255,23 @@ const PricingModal = ({ isOpen, onClose, onSelectPlan, onDemoUpgrade }: { isOpen
 // --- Main App ---
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'borrowers' | 'loans' | 'reports' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'borrowers' | 'loans' | 'chitfunds' | 'reports' | 'settings'>('dashboard');
   const [stats, setStats] = useState<Stats>({ totalGiven: 0, totalBorrowed: 0, totalCollected: 0, activeBorrowers: 0, investedCapital: 0 });
   const [borrowers, setBorrowers] = useState<Borrower[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
+  const [chitGroups, setChitGroups] = useState<ChitGroup[]>([]);
+  const [selectedChitGroup, setSelectedChitGroup] = useState<ChitGroup | null>(null);
+  const [chitMembers, setChitMembers] = useState<ChitMember[]>([]);
+  const [chitAuctions, setChitAuctions] = useState<ChitAuction[]>([]);
+  const [chitPayments, setChitPayments] = useState<ChitPayment[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Chit Fund Modals
+  const [showChitGroupModal, setShowChitGroupModal] = useState(false);
+  const [showChitAuctionModal, setShowChitAuctionModal] = useState(false);
+  const [showChitPaymentModal, setShowChitPaymentModal] = useState(false);
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<ChitMember | null>(null);
   
   // Auth states
   const [user, setUser] = useState<User | null>(null);
@@ -312,6 +330,11 @@ export default function App() {
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
   const [viewingBorrowerProfile, setViewingBorrowerProfile] = useState<Borrower | null>(null);
   const [showPricingModal, setShowPricingModal] = useState(false);
+  const [showBulkPaymentModal, setShowBulkPaymentModal] = useState(false);
+  const [showConsolidateModal, setShowConsolidateModal] = useState(false);
+  const [selectedLoanIds, setSelectedLoanIds] = useState<number[]>([]);
+  const [selectedChitMemberIds, setSelectedChitMemberIds] = useState<number[]>([]);
+  const [showBulkChitPaymentModal, setShowBulkChitPaymentModal] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -332,6 +355,7 @@ export default function App() {
       fetchStats();
       fetchBorrowers();
       fetchLoans();
+      fetchChitGroups();
     }
   }, [token]);
 
@@ -408,6 +432,26 @@ export default function App() {
     });
     const data = await res.json();
     setLoans(data);
+  };
+
+  const fetchChitGroups = async () => {
+    const res = await fetch('/api/chit-groups', { headers: { 'Authorization': `Bearer ${token}` } });
+    if (res.ok) setChitGroups(await res.json());
+  };
+
+  const fetchChitMembers = async (groupId: number) => {
+    const res = await fetch(`/api/chit-groups/${groupId}/members`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (res.ok) setChitMembers(await res.json());
+  };
+
+  const fetchChitAuctions = async (groupId: number) => {
+    const res = await fetch(`/api/chit-groups/${groupId}/auctions`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (res.ok) setChitAuctions(await res.json());
+  };
+
+  const fetchChitPayments = async (groupId: number) => {
+    const res = await fetch(`/api/chit-groups/${groupId}/payments`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (res.ok) setChitPayments(await res.json());
   };
 
   const fetchBorrowerLoans = async (borrowerId: number) => {
@@ -763,6 +807,7 @@ export default function App() {
   };
 
   const handleUpgrade = () => {
+    if (PREMIUM_PAUSED) return;
     setShowPricingModal(true);
   };
 
@@ -866,7 +911,114 @@ export default function App() {
     }
   };
 
+  const handleCreateChitGroup = async (data: any) => {
+    const res = await fetch('/api/chit-groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(data)
+    });
+    if (res.ok) {
+      fetchChitGroups();
+      setShowChitGroupModal(false);
+    }
+  };
+
+  const handleAddChitMember = async (borrowerId: number, slotNumber: number) => {
+    if (!selectedChitGroup) return;
+    const res = await fetch(`/api/chit-groups/${selectedChitGroup.id}/members`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ borrower_id: borrowerId, slot_number: slotNumber })
+    });
+    if (res.ok) {
+      fetchChitMembers(selectedChitGroup.id);
+      setShowAddMemberModal(false);
+    }
+  };
+
+  const handleRecordAuction = async (data: any) => {
+    if (!selectedChitGroup) return;
+    const res = await fetch(`/api/chit-groups/${selectedChitGroup.id}/auctions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(data)
+    });
+    if (res.ok) {
+      fetchChitAuctions(selectedChitGroup.id);
+      fetchChitMembers(selectedChitGroup.id);
+      setShowChitAuctionModal(false);
+    }
+  };
+
+  const handleRecordChitPayment = async (data: any) => {
+    if (!selectedChitGroup) return;
+    const res = await fetch('/api/chit-payments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ ...data, chit_group_id: selectedChitGroup.id })
+    });
+    if (res.ok) {
+      fetchChitPayments(selectedChitGroup.id);
+      setShowChitPaymentModal(false);
+    }
+  };
+
+  const handleBulkChitPayment = async (data: { chit_group_id: number, payments: { chit_member_id: number, amount: number }[], month_number: number, payment_date: string }) => {
+    const res = await fetch('/api/chit-payments/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(data)
+    });
+    if (res.ok) {
+      if (selectedChitGroup) fetchChitPayments(selectedChitGroup.id);
+      setShowBulkChitPaymentModal(false);
+      setSelectedChitMemberIds([]);
+    } else {
+      const err = await res.json();
+      alert(err.error || "Bulk payment failed");
+    }
+  };
+
+  const handleBulkPayment = async (data: { payments: { loan_id: number, amount: number }[], payment_date: string, notes: string }) => {
+    const res = await fetch('/api/payments/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(data)
+    });
+    if (res.ok) {
+      fetchLoans();
+      fetchStats();
+      setShowBulkPaymentModal(false);
+      setSelectedLoanIds([]);
+    } else {
+      const err = await res.json();
+      alert(err.error || "Bulk payment failed");
+    }
+  };
+
+  const handleConsolidateLoans = async (loanIds: number[], newLoanDetails: any) => {
+    const res = await fetch('/api/loans/consolidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ loan_ids: loanIds, new_loan_details: newLoanDetails })
+    });
+    if (res.ok) {
+      fetchLoans();
+      fetchStats();
+      setShowConsolidateModal(false);
+      setSelectedLoanIds([]);
+    } else {
+      const err = await res.json();
+      alert(err.error || "Consolidation failed");
+    }
+  };
+
   // --- Views ---
+
+  const closeBorrowerProfile = () => {
+    setViewingBorrowerProfile(null);
+    setSelectedLoanIds([]);
+  };
 
   const DashboardView = () => {
     const utilization = stats.investedCapital > 0 ? (stats.totalGiven / stats.investedCapital) * 100 : 0;
@@ -889,6 +1041,59 @@ export default function App() {
           onSelectPlan={handleRazorpayPayment} 
           onDemoUpgrade={handleDemoUpgrade}
         />
+
+        <ChitGroupModal 
+          isOpen={showChitGroupModal} 
+          onClose={() => setShowChitGroupModal(false)} 
+          onCreate={handleCreateChitGroup} 
+        />
+
+        {selectedChitGroup && (
+          <>
+            <AddMemberModal 
+              isOpen={showAddMemberModal} 
+              onClose={() => setShowAddMemberModal(false)} 
+              onAdd={handleAddChitMember} 
+              borrowers={borrowers}
+            />
+            <ChitAuctionModal 
+              isOpen={showChitAuctionModal} 
+              onClose={() => setShowChitAuctionModal(false)} 
+              onRecord={handleRecordAuction} 
+              members={chitMembers}
+              group={selectedChitGroup}
+            />
+            <ChitPaymentModal 
+              isOpen={showChitPaymentModal} 
+              onClose={() => setShowChitPaymentModal(false)} 
+              onRecord={handleRecordChitPayment} 
+              member={selectedMember}
+              group={selectedChitGroup}
+            />
+
+            <BulkChitPaymentModal 
+              isOpen={showBulkChitPaymentModal} 
+              onClose={() => setShowBulkChitPaymentModal(false)} 
+              onRecord={handleBulkChitPayment} 
+              selectedMembers={chitMembers.filter(m => selectedChitMemberIds.includes(m.id))}
+              group={selectedChitGroup}
+            />
+
+            <BulkPaymentModal 
+              isOpen={showBulkPaymentModal} 
+              onClose={() => setShowBulkPaymentModal(false)} 
+              onRecord={handleBulkPayment} 
+              selectedLoans={loans.filter(l => selectedLoanIds.includes(l.id))}
+            />
+
+            <ConsolidateModal 
+              isOpen={showConsolidateModal} 
+              onClose={() => setShowConsolidateModal(false)} 
+              onConsolidate={handleConsolidateLoans} 
+              selectedLoans={loans.filter(l => selectedLoanIds.includes(l.id))}
+            />
+          </>
+        )}
         
         <motion.div variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}>
           <FinancialVisualizer lent={stats.totalGiven} borrowed={stats.totalBorrowed} capital={stats.investedCapital} />
@@ -960,6 +1165,18 @@ export default function App() {
               </div>
               <div className="p-2 bg-red-100 dark:bg-red-500/20 rounded-lg">
                 <AlertCircle size={20} className="text-red-500" />
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6 bg-indigo-50 dark:bg-indigo-500/10 border-indigo-100 dark:border-indigo-500/20 cursor-pointer" onClick={() => setActiveTab('chitfunds')}>
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-indigo-400 dark:text-indigo-300 text-[10px] font-bold uppercase tracking-widest">Chit Groups</p>
+                <h2 className="text-2xl font-bold mt-1 text-indigo-600 dark:text-indigo-400">{chitGroups.length} Active</h2>
+              </div>
+              <div className="p-2 bg-indigo-100 dark:bg-indigo-500/20 rounded-lg">
+                <UsersRound size={20} className="text-indigo-500" />
               </div>
             </div>
           </Card>
@@ -1043,6 +1260,20 @@ export default function App() {
                   <p className="text-xs text-black/40 dark:text-white/30">Issue a new loan</p>
                 </div>
               </motion.button>
+              <motion.button 
+                whileHover={{ scale: 1.02, y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setShowChitGroupModal(true)}
+                className="p-4 rounded-2xl border border-black/10 dark:border-white/10 hover:border-black dark:hover:border-white hover:bg-black/5 dark:hover:bg-white/5 transition-all text-left flex flex-col gap-3 cursor-pointer"
+              >
+                <div className="w-10 h-10 rounded-xl bg-indigo-500 text-white flex items-center justify-center">
+                  <UsersRound size={20} />
+                </div>
+                <div>
+                  <p className="font-bold">New Chit Group</p>
+                  <p className="text-xs text-black/40 dark:text-white/30">Start a new chit fund</p>
+                </div>
+              </motion.button>
             </div>
           </Card>
         </motion.div>
@@ -1111,6 +1342,222 @@ export default function App() {
           </Card>
         ))}
       </div>
+    </motion.div>
+  );
+
+  const ChitFundsView = () => (
+    <motion.div 
+      initial="hidden"
+      animate="visible"
+      variants={{
+        visible: { transition: { staggerChildren: 0.05 } }
+      }}
+      className="space-y-6"
+    >
+      {!selectedChitGroup ? (
+        <>
+          <FadeIn direction="down">
+            <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
+              <h2 className="text-2xl font-black">Chit Fund Groups</h2>
+              <Button onClick={() => setShowChitGroupModal(true)} className="w-full md:w-auto">
+                <Plus size={20} /> Create New Group
+              </Button>
+            </div>
+          </FadeIn>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {chitGroups.map(group => (
+              <Card key={group.id} className="p-6 hover:border-indigo-500/30 transition-all group cursor-pointer" onClick={() => {
+                setSelectedChitGroup(group);
+                setSelectedChitMemberIds([]);
+                fetchChitMembers(group.id);
+                fetchChitAuctions(group.id);
+                fetchChitPayments(group.id);
+              }}>
+                <div className="flex justify-between items-start mb-4">
+                  <div className="p-3 bg-indigo-500/10 rounded-2xl text-indigo-500">
+                    <UsersRound size={24} />
+                  </div>
+                  <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${group.status === 'Active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-black/5 text-black/40'}`}>
+                    {group.status}
+                  </span>
+                </div>
+                <h3 className="text-xl font-bold mb-1">{group.name}</h3>
+                <p className="text-sm text-black/40 dark:text-white/30 mb-4">Value: {user?.currency || '₹'}{group.total_value.toLocaleString()}</p>
+                
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-black/5 dark:border-white/5">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-black/40 dark:text-white/30">Members</p>
+                    <p className="font-bold">{group.members_count}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-black/40 dark:text-white/30">Monthly</p>
+                    <p className="font-bold">{user?.currency || '₹'}{group.monthly_contribution.toLocaleString()}</p>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="space-y-6">
+          <button 
+            onClick={() => { setSelectedChitGroup(null); setSelectedChitMemberIds([]); }}
+            className="flex items-center gap-2 text-sm font-bold text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white transition-colors"
+          >
+            <ArrowLeft size={16} /> Back to Groups
+          </button>
+
+          <div className="flex flex-col lg:flex-row gap-6">
+            <div className="flex-1 space-y-6">
+              <Card className="p-6">
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <h2 className="text-2xl font-black">{selectedChitGroup.name}</h2>
+                    <p className="text-sm text-black/40 dark:text-white/30">Started on {new Date(selectedChitGroup.start_date).toLocaleDateString()}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="secondary" className="text-xs py-1.5" onClick={() => setShowAddMemberModal(true)}>
+                      <Plus size={16} /> Add Member
+                    </Button>
+                    <Button className="text-xs py-1.5" onClick={() => setShowChitAuctionModal(true)}>
+                      <Gavel size={16} /> New Auction
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="p-4 bg-black/5 dark:bg-white/5 rounded-2xl">
+                    <p className="text-[10px] font-bold uppercase text-black/40 dark:text-white/30">Total Value</p>
+                    <p className="text-lg font-bold">{user?.currency || '₹'}{selectedChitGroup.total_value.toLocaleString()}</p>
+                  </div>
+                  <div className="p-4 bg-black/5 dark:bg-white/5 rounded-2xl">
+                    <p className="text-[10px] font-bold uppercase text-black/40 dark:text-white/30">Duration</p>
+                    <p className="text-lg font-bold">{selectedChitGroup.duration_months} Months</p>
+                  </div>
+                  <div className="p-4 bg-black/5 dark:bg-white/5 rounded-2xl">
+                    <p className="text-[10px] font-bold uppercase text-black/40 dark:text-white/30">Monthly Sub</p>
+                    <p className="text-lg font-bold">{user?.currency || '₹'}{selectedChitGroup.monthly_contribution.toLocaleString()}</p>
+                  </div>
+                  <div className="p-4 bg-black/5 dark:bg-white/5 rounded-2xl">
+                    <p className="text-[10px] font-bold uppercase text-black/40 dark:text-white/30">Commission</p>
+                    <p className="text-lg font-bold">{selectedChitGroup.commission_percent}%</p>
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center gap-3">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 rounded border-black/10 dark:border-white/10 text-indigo-600 focus:ring-indigo-500"
+                      checked={selectedChitMemberIds.length === chitMembers.length && chitMembers.length > 0}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedChitMemberIds(chitMembers.map(m => m.id));
+                        else setSelectedChitMemberIds([]);
+                      }}
+                    />
+                    <h3 className="font-bold text-lg">Members ({chitMembers.length}/{selectedChitGroup.members_count})</h3>
+                  </div>
+                  {selectedChitMemberIds.length > 0 && (
+                    <Button variant="secondary" className="text-xs py-1.5" onClick={() => setShowBulkChitPaymentModal(true)}>
+                      Bulk Pay ({selectedChitMemberIds.length})
+                    </Button>
+                  )}
+                </div>
+                <div className="space-y-3">
+                  {chitMembers.map(member => (
+                    <div key={member.id} className={`flex items-center justify-between p-4 bg-black/5 dark:bg-white/5 rounded-2xl transition-all ${selectedChitMemberIds.includes(member.id) ? 'border-indigo-500 bg-indigo-500/5' : ''}`}>
+                      <div className="flex items-center gap-3">
+                        <input 
+                          type="checkbox" 
+                          className="w-4 h-4 rounded border-black/10 dark:border-white/10 text-indigo-600 focus:ring-indigo-500"
+                          checked={selectedChitMemberIds.includes(member.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedChitMemberIds([...selectedChitMemberIds, member.id]);
+                            else setSelectedChitMemberIds(selectedChitMemberIds.filter(id => id !== member.id));
+                          }}
+                        />
+                        <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-bold">
+                          {member.slot_number}
+                        </div>
+                        <div>
+                          <p className="font-bold">{member.borrower_name}</p>
+                          <p className="text-xs text-black/40 dark:text-white/30">{member.phone}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {member.has_won_auction === 1 ? (
+                          <span className="text-[10px] font-bold uppercase px-2 py-1 bg-emerald-500/10 text-emerald-500 rounded-lg">
+                            Won Month {member.auction_won_month}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold uppercase px-2 py-1 bg-black/5 text-black/40 rounded-lg">
+                            Eligible
+                          </span>
+                        )}
+                        <Button variant="ghost" className="text-xs py-1.5" onClick={() => {
+                          setSelectedMember(member);
+                          setShowChitPaymentModal(true);
+                        }}>
+                          <Coins size={16} /> Pay
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
+
+            <div className="w-full lg:w-96 space-y-6">
+              <Card className="p-6">
+                <h3 className="font-bold text-lg mb-4">Auction History</h3>
+                <div className="space-y-4">
+                  {chitAuctions.map(auction => (
+                    <div key={auction.id} className="p-4 border border-black/5 dark:border-white/5 rounded-2xl">
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-bold uppercase text-indigo-500">Month {auction.month_number}</span>
+                        <span className="text-[10px] text-black/40 dark:text-white/30">{new Date(auction.auction_date).toLocaleDateString()}</span>
+                      </div>
+                      <p className="font-bold mb-1">{auction.winner_name}</p>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-black/40 dark:text-white/30">Bid (Discount)</span>
+                        <span className="font-bold text-red-500">-{user?.currency || '₹'}{auction.bid_amount.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-xs mt-1">
+                        <span className="text-black/40 dark:text-white/30">Dividend/Member</span>
+                        <span className="font-bold text-emerald-500">+{user?.currency || '₹'}{auction.dividend_per_member.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {chitAuctions.length === 0 && (
+                    <p className="text-sm text-black/40 dark:text-white/30 text-center py-8">No auctions recorded yet.</p>
+                  )}
+                </div>
+              </Card>
+
+              <Card className="p-6">
+                <h3 className="font-bold text-lg mb-4">Recent Payments</h3>
+                <div className="space-y-4">
+                  {chitPayments.slice(0, 10).map(payment => (
+                    <div key={payment.id} className="flex items-center justify-between p-3 bg-black/5 dark:bg-white/5 rounded-xl">
+                      <div>
+                        <p className="text-xs font-bold">{payment.borrower_name}</p>
+                        <p className="text-[10px] text-black/40 dark:text-white/30">Month {payment.month_number} • {payment.payment_method}</p>
+                      </div>
+                      <p className="font-bold text-xs">{user?.currency || '₹'}{payment.amount.toLocaleString()}</p>
+                    </div>
+                  ))}
+                  {chitPayments.length === 0 && (
+                    <p className="text-sm text-black/40 dark:text-white/30 text-center py-8">No payments recorded yet.</p>
+                  )}
+                </div>
+              </Card>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 
@@ -1366,22 +1813,24 @@ export default function App() {
           </div>
 
           <div className="space-y-4">
-            <div className="p-4 rounded-2xl border border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-black dark:bg-white text-white dark:text-black rounded-lg">
-                  <ShieldCheck size={20} />
+            {!PREMIUM_PAUSED && (
+              <div className="p-4 rounded-2xl border border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-black dark:bg-white text-white dark:text-black rounded-lg">
+                    <ShieldCheck size={20} />
+                  </div>
+                  <div>
+                    <p className="font-bold">Premium Subscription</p>
+                    <p className="text-xs text-black/40 dark:text-white/30">Remove all ads and unlock advanced features.</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-bold">Premium Subscription</p>
-                  <p className="text-xs text-black/40 dark:text-white/30">Remove all ads and unlock advanced features.</p>
-                </div>
+                {user?.is_premium === 1 ? (
+                  <span className="text-xs font-bold text-emerald-500">Active</span>
+                ) : (
+                  <Button onClick={handleUpgrade} className="text-xs py-1.5">Upgrade {user?.currency || '₹'}99/mo</Button>
+                )}
               </div>
-              {user?.is_premium === 1 ? (
-                <span className="text-xs font-bold text-emerald-500">Active</span>
-              ) : (
-                <Button onClick={handleUpgrade} className="text-xs py-1.5">Upgrade {user?.currency || '₹'}99/mo</Button>
-              )}
-            </div>
+            )}
 
             <div className="p-4 rounded-2xl border border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -1394,11 +1843,11 @@ export default function App() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                {user?.is_premium === 0 && <span className="text-[10px] font-bold text-indigo-500 uppercase">Premium Only</span>}
+                {user?.is_premium === 0 && !PREMIUM_PAUSED && <span className="text-[10px] font-bold text-indigo-500 uppercase">Premium Only</span>}
                 <button 
-                  onClick={() => user?.is_premium === 1 && handleToggleBackup(user.backup_enabled === 0)}
-                  disabled={user?.is_premium === 0}
-                  className={`w-12 h-6 rounded-full transition-all relative ${user?.backup_enabled === 1 ? 'bg-emerald-500' : 'bg-black/10 dark:bg-white/10'} ${user?.is_premium === 0 ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  onClick={() => (user?.is_premium === 1 || PREMIUM_PAUSED) && handleToggleBackup(user.backup_enabled === 0)}
+                  disabled={user?.is_premium === 0 && !PREMIUM_PAUSED}
+                  className={`w-12 h-6 rounded-full transition-all relative ${user?.backup_enabled === 1 ? 'bg-emerald-500' : 'bg-black/10 dark:bg-white/10'} ${(user?.is_premium === 0 && !PREMIUM_PAUSED) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                 >
                   <motion.div 
                     animate={{ x: user?.backup_enabled === 1 ? 26 : 2 }}
@@ -1467,14 +1916,25 @@ export default function App() {
         <Card className="p-6">
           <h4 className="font-bold mb-4">Legal & Policies</h4>
           
-          <div className="mb-6 p-4 bg-amber-500/10 rounded-2xl border border-amber-500/20">
-            <p className="text-amber-600 dark:text-amber-400 font-bold mb-1 text-xs flex items-center gap-2">
-              <AlertCircle size={14} /> Razorpay Activation Notice
-            </p>
-            <p className="text-[10px] text-black/60 dark:text-white/40 leading-relaxed">
-              Razorpay accounts typically take 7 days to activate. During this period, real payments will not work. Use the <b>"Bypass for Testing"</b> button in the upgrade modal to test premium features.
-            </p>
-          </div>
+          {!PREMIUM_PAUSED ? (
+            <div className="mb-6 p-4 bg-amber-500/10 rounded-2xl border border-amber-500/20">
+              <p className="text-amber-600 dark:text-amber-400 font-bold mb-1 text-xs flex items-center gap-2">
+                <AlertCircle size={14} /> Razorpay Activation Notice
+              </p>
+              <p className="text-[10px] text-black/60 dark:text-white/40 leading-relaxed">
+                Razorpay accounts typically take 7 days to activate. During this period, real payments will not work. Use the <b>"Bypass for Testing"</b> button in the upgrade modal to test premium features.
+              </p>
+            </div>
+          ) : (
+            <div className="mb-6 p-4 bg-indigo-500/10 rounded-2xl border border-indigo-500/20">
+              <p className="text-indigo-600 dark:text-indigo-400 font-bold mb-1 text-xs flex items-center gap-2">
+                <Sparkles size={14} /> Premium Features Paused
+              </p>
+              <p className="text-[10px] text-black/60 dark:text-white/40 leading-relaxed">
+                We are currently activating our payment gateway. Premium features like Cloud Backup are temporarily available to all users for free during this period.
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <button 
@@ -1610,6 +2070,542 @@ export default function App() {
 };
 
   // --- Modals ---
+
+  const ChitGroupModal = ({ isOpen, onClose, onCreate }: { isOpen: boolean, onClose: () => void, onCreate: (data: any) => void }) => {
+    const [formData, setFormData] = useState({
+      name: '',
+      total_value: 100000,
+      duration_months: 10,
+      monthly_contribution: 10000,
+      commission_percent: 5,
+      start_date: new Date().toISOString().split('T')[0]
+    });
+
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title="Create Chit Group">
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Group Name</label>
+            <input 
+              type="text" 
+              className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+              value={formData.name}
+              onChange={e => setFormData({ ...formData, name: e.target.value })}
+              placeholder="e.g. Monthly Savings Group A"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Total Value</label>
+              <input 
+                type="number" 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                value={formData.total_value}
+                onChange={e => {
+                  const val = Number(e.target.value);
+                  setFormData({ ...formData, total_value: val, monthly_contribution: val / formData.duration_months });
+                }}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Duration (Months)</label>
+              <input 
+                type="number" 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                value={formData.duration_months}
+                onChange={e => {
+                  const dur = Number(e.target.value);
+                  setFormData({ ...formData, duration_months: dur, monthly_contribution: formData.total_value / dur });
+                }}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Monthly Sub</label>
+              <input 
+                type="number" 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 bg-black/5"
+                value={formData.monthly_contribution}
+                readOnly
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Commission %</label>
+              <input 
+                type="number" 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                value={formData.commission_percent}
+                onChange={e => setFormData({ ...formData, commission_percent: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Start Date</label>
+            <input 
+              type="date" 
+              className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+              value={formData.start_date}
+              onChange={e => setFormData({ ...formData, start_date: e.target.value })}
+            />
+          </div>
+          <Button className="w-full py-4" onClick={() => onCreate(formData)}>Create Group</Button>
+        </div>
+      </Modal>
+    );
+  };
+
+  const AddMemberModal = ({ isOpen, onClose, onAdd, borrowers }: { isOpen: boolean, onClose: () => void, onAdd: (bid: number, slot: number) => void, borrowers: Borrower[] }) => {
+    const [selectedBorrowerId, setSelectedBorrowerId] = useState<number>(0);
+    const [slotNumber, setSlotNumber] = useState(1);
+
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title="Add Member to Group">
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Select Borrower</label>
+            <select 
+              className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+              value={selectedBorrowerId}
+              onChange={e => setSelectedBorrowerId(Number(e.target.value))}
+            >
+              <option value={0}>Choose a borrower...</option>
+              {borrowers.map(b => (
+                <option key={b.id} value={b.id}>{b.name} ({b.phone})</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Slot Number</label>
+            <input 
+              type="number" 
+              className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+              value={slotNumber}
+              onChange={e => setSlotNumber(Number(e.target.value))}
+            />
+          </div>
+          <Button className="w-full py-4" onClick={() => onAdd(selectedBorrowerId, slotNumber)} disabled={!selectedBorrowerId}>
+            Add Member
+          </Button>
+        </div>
+      </Modal>
+    );
+  };
+
+  const ChitAuctionModal = ({ isOpen, onClose, onRecord, members, group }: { isOpen: boolean, onClose: () => void, onRecord: (data: any) => void, members: ChitMember[], group: ChitGroup }) => {
+    const [formData, setFormData] = useState({
+      winner_id: 0,
+      bid_amount: 0,
+      month_number: 1,
+      auction_date: new Date().toISOString().split('T')[0]
+    });
+
+    const eligibleMembers = members.filter(m => m.has_won_auction === 0);
+
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title="Record Auction">
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Auction Month</label>
+            <input 
+              type="number" 
+              className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+              value={formData.month_number}
+              onChange={e => setFormData({ ...formData, month_number: Number(e.target.value) })}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Auction Winner</label>
+            <select 
+              className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+              value={formData.winner_id}
+              onChange={e => setFormData({ ...formData, winner_id: Number(e.target.value) })}
+            >
+              <option value={0}>Select winner...</option>
+              {eligibleMembers.map(m => (
+                <option key={m.id} value={m.id}>{m.borrower_name} (Slot {m.slot_number})</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Bid Amount (Discount)</label>
+            <input 
+              type="number" 
+              className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+              value={formData.bid_amount}
+              onChange={e => setFormData({ ...formData, bid_amount: Number(e.target.value) })}
+              placeholder="e.g. 5000"
+            />
+            <p className="text-[10px] text-indigo-500 mt-1 font-bold italic">This amount will be distributed as dividend.</p>
+          </div>
+          <div>
+            <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Auction Date</label>
+            <input 
+              type="date" 
+              className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+              value={formData.auction_date}
+              onChange={e => setFormData({ ...formData, auction_date: e.target.value })}
+            />
+          </div>
+          <Button className="w-full py-4" onClick={() => onRecord(formData)} disabled={!formData.winner_id}>
+            Record Auction
+          </Button>
+        </div>
+      </Modal>
+    );
+  };
+
+  const ChitPaymentModal = ({ isOpen, onClose, onRecord, member, group }: { isOpen: boolean, onClose: () => void, onRecord: (data: any) => void, member: ChitMember | null, group: ChitGroup }) => {
+    const [formData, setFormData] = useState({
+      amount: group.monthly_contribution,
+      payment_date: new Date().toISOString().split('T')[0],
+      month_number: 1,
+      payment_method: 'Cash',
+      notes: ''
+    });
+
+    useEffect(() => {
+      if (group) {
+        setFormData(prev => ({ ...prev, amount: group.monthly_contribution }));
+      }
+    }, [group]);
+
+    if (!member) return null;
+
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title={`Record Payment: ${member.borrower_name}`}>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Month Number</label>
+              <input 
+                type="number" 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                value={formData.month_number}
+                onChange={e => setFormData({ ...formData, month_number: Number(e.target.value) })}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Amount</label>
+              <input 
+                type="number" 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                value={formData.amount}
+                onChange={e => setFormData({ ...formData, amount: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Payment Date</label>
+              <input 
+                type="date" 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                value={formData.payment_date}
+                onChange={e => setFormData({ ...formData, payment_date: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Method</label>
+              <select 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                value={formData.payment_method}
+                onChange={e => setFormData({ ...formData, payment_method: e.target.value })}
+              >
+                <option value="Cash">Cash</option>
+                <option value="UPI">UPI</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Notes</label>
+            <textarea 
+              className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+              value={formData.notes}
+              onChange={e => setFormData({ ...formData, notes: e.target.value })}
+              rows={2}
+            />
+          </div>
+          <Button className="w-full py-4" onClick={() => onRecord({ ...formData, chit_member_id: member.id })}>
+            Record Payment
+          </Button>
+        </div>
+      </Modal>
+    );
+  };
+
+  const BulkPaymentModal = ({ isOpen, onClose, onRecord, selectedLoans }: { isOpen: boolean, onClose: () => void, onRecord: (data: any) => void, selectedLoans: Loan[] }) => {
+    const [totalAmount, setTotalAmount] = useState(0);
+    const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+    const [notes, setNotes] = useState('');
+    const [distribution, setDistribution] = useState<{ [key: number]: number }>({});
+
+    useEffect(() => {
+      if (isOpen) {
+        // Default distribution: split equally
+        const equalAmount = totalAmount / selectedLoans.length;
+        const newDist: { [key: number]: number } = {};
+        selectedLoans.forEach(l => {
+          newDist[l.id] = equalAmount;
+        });
+        setDistribution(newDist);
+      }
+    }, [isOpen, selectedLoans.length]);
+
+    const handleTotalChange = (val: number) => {
+      setTotalAmount(val);
+      const equalAmount = val / selectedLoans.length;
+      const newDist: { [key: number]: number } = {};
+      selectedLoans.forEach(l => {
+        newDist[l.id] = equalAmount;
+      });
+      setDistribution(newDist);
+    };
+
+    const handleDistChange = (loanId: number, val: number) => {
+      const newDist = { ...distribution, [loanId]: val };
+      setDistribution(newDist);
+      const newTotal = Object.values(newDist).reduce((sum, v) => sum + v, 0);
+      setTotalAmount(newTotal);
+    };
+
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title="Bulk Payment">
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Total Amount</label>
+            <input 
+              type="number" 
+              className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+              value={totalAmount}
+              onChange={e => handleTotalChange(Number(e.target.value))}
+            />
+          </div>
+          <div className="space-y-3 max-h-60 overflow-y-auto p-1">
+            {selectedLoans.map(loan => (
+              <div key={loan.id} className="p-3 bg-black/5 dark:bg-white/5 rounded-xl flex justify-between items-center gap-4">
+                <div className="flex-1">
+                  <p className="text-xs font-bold">Loan #{loan.id}</p>
+                  <p className="text-[10px] text-black/40 dark:text-white/30">Balance: {user?.currency || '₹'}{(loan.balance || 0).toLocaleString()}</p>
+                </div>
+                <input 
+                  type="number" 
+                  className="w-24 p-2 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 text-sm"
+                  value={distribution[loan.id] || 0}
+                  onChange={e => handleDistChange(loan.id, Number(e.target.value))}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Payment Date</label>
+              <input 
+                type="date" 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                value={paymentDate}
+                onChange={e => setPaymentDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Notes</label>
+              <input 
+                type="text" 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                placeholder="Bulk payment"
+              />
+            </div>
+          </div>
+          <Button className="w-full py-4" onClick={() => onRecord({
+            payments: Object.entries(distribution).map(([id, amt]) => ({ loan_id: Number(id), amount: amt })),
+            payment_date: paymentDate,
+            notes
+          })}>
+            Record Bulk Payment
+          </Button>
+        </div>
+      </Modal>
+    );
+  };
+
+  const ConsolidateModal = ({ isOpen, onClose, onConsolidate, selectedLoans }: { isOpen: boolean, onClose: () => void, onConsolidate: (ids: number[], details: any) => void, selectedLoans: Loan[] }) => {
+    const totalBalance = selectedLoans.reduce((sum, l) => sum + (l.balance || 0), 0);
+    const [formData, setFormData] = useState<{
+      loan_type: 'Interest Only' | 'Installment';
+      interest_type: 'Daily' | 'Weekly' | 'Monthly';
+      interest_rate: number;
+      installment_amount: number;
+      start_date: string;
+      duration: number;
+    }>({
+      loan_type: 'Interest Only',
+      interest_type: 'Monthly',
+      interest_rate: 2,
+      installment_amount: 0,
+      start_date: new Date().toISOString().split('T')[0],
+      duration: 12
+    });
+
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title="Consolidate Loans">
+        <div className="space-y-4">
+          <div className="p-4 bg-indigo-500/10 rounded-2xl border border-indigo-500/20">
+            <p className="text-xs font-bold text-indigo-500 uppercase tracking-widest mb-1">Total Outstanding Balance</p>
+            <h3 className="text-2xl font-black text-indigo-600 dark:text-indigo-400">{user?.currency || '₹'}{totalBalance.toLocaleString()}</h3>
+            <p className="text-[10px] text-black/40 dark:text-white/30 mt-1">This will be the principal for the new consolidated loan.</p>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Loan Type</label>
+              <select 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                value={formData.loan_type}
+                onChange={e => setFormData({ ...formData, loan_type: e.target.value as any })}
+              >
+                <option value="Interest Only">Interest Only</option>
+                <option value="Installment">Installment</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Interest Type</label>
+              <select 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                value={formData.interest_type}
+                onChange={e => setFormData({ ...formData, interest_type: e.target.value as any })}
+              >
+                <option value="Daily">Daily</option>
+                <option value="Weekly">Weekly</option>
+                <option value="Monthly">Monthly</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Interest Rate (%)</label>
+              <input 
+                type="number" 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                value={formData.interest_rate}
+                onChange={e => setFormData({ ...formData, interest_rate: Number(e.target.value) })}
+              />
+            </div>
+            {formData.loan_type === 'Installment' && (
+              <div>
+                <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Installment Amount</label>
+                <input 
+                  type="number" 
+                  className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                  value={formData.installment_amount}
+                  onChange={e => setFormData({ ...formData, installment_amount: Number(e.target.value) })}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Start Date</label>
+              <input 
+                type="date" 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                value={formData.start_date}
+                onChange={e => setFormData({ ...formData, start_date: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Duration (Months)</label>
+              <input 
+                type="number" 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                value={formData.duration}
+                onChange={e => setFormData({ ...formData, duration: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+
+          <Button className="w-full py-4" onClick={() => onConsolidate(selectedLoans.map(l => l.id), formData)}>
+            Consolidate & Create New Loan
+          </Button>
+        </div>
+      </Modal>
+    );
+  };
+
+  const BulkChitPaymentModal = ({ isOpen, onClose, onRecord, selectedMembers, group }: { isOpen: boolean, onClose: () => void, onRecord: (data: any) => void, selectedMembers: ChitMember[], group: ChitGroup }) => {
+    const [monthNumber, setMonthNumber] = useState(1);
+    const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+    const [distribution, setDistribution] = useState<{ [key: number]: number }>({});
+
+    useEffect(() => {
+      if (isOpen && group) {
+        const newDist: { [key: number]: number } = {};
+        selectedMembers.forEach(m => {
+          newDist[m.id] = group.monthly_contribution;
+        });
+        setDistribution(newDist);
+      }
+    }, [isOpen, selectedMembers.length, group]);
+
+    const handleDistChange = (memberId: number, val: number) => {
+      setDistribution({ ...distribution, [memberId]: val });
+    };
+
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title="Bulk Chit Payment">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Month Number</label>
+              <input 
+                type="number" 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                value={monthNumber}
+                onChange={e => setMonthNumber(Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Payment Date</label>
+              <input 
+                type="date" 
+                className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                value={paymentDate}
+                onChange={e => setPaymentDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="space-y-3 max-h-60 overflow-y-auto p-1">
+            {selectedMembers.map(member => (
+              <div key={member.id} className="p-3 bg-black/5 dark:bg-white/5 rounded-xl flex justify-between items-center gap-4">
+                <div className="flex-1">
+                  <p className="text-xs font-bold">{member.borrower_name}</p>
+                  <p className="text-[10px] text-black/40 dark:text-white/30">Slot #{member.slot_number}</p>
+                </div>
+                <input 
+                  type="number" 
+                  className="w-24 p-2 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 text-sm"
+                  value={distribution[member.id] || 0}
+                  onChange={e => handleDistChange(member.id, Number(e.target.value))}
+                />
+              </div>
+            ))}
+          </div>
+          <Button className="w-full py-4" onClick={() => onRecord({
+            chit_group_id: group.id,
+            payments: Object.entries(distribution).map(([id, amt]) => ({ chit_member_id: Number(id), amount: amt })),
+            month_number: monthNumber,
+            payment_date: paymentDate
+          })}>
+            Record Bulk Payments
+          </Button>
+        </div>
+      </Modal>
+    );
+  };
 
   const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean, onClose: () => void, title: string, children: React.ReactNode }) => (
     <AnimatePresence>
@@ -1749,6 +2745,7 @@ export default function App() {
             { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
             { id: 'borrowers', icon: Users, label: 'Borrowers' },
             { id: 'loans', icon: HandCoins, label: 'Loans' },
+            { id: 'chitfunds', icon: CircleDollarSign, label: 'Chit Funds' },
             { id: 'reports', icon: FileText, label: 'Reports' },
             { id: 'settings', icon: Settings, label: 'Settings' }
           ].map(tab => (
@@ -1824,6 +2821,7 @@ export default function App() {
               {activeTab === 'dashboard' && <DashboardView />}
               {activeTab === 'borrowers' && <BorrowersView />}
               {activeTab === 'loans' && <LoansView />}
+              {activeTab === 'chitfunds' && <ChitFundsView />}
               {activeTab === 'reports' && <ReportsView />}
               {activeTab === 'settings' && <SettingsView />}
             </motion.div>
@@ -2405,7 +3403,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setViewingBorrowerProfile(null)}
+              onClick={closeBorrowerProfile}
               className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             />
             <motion.div 
@@ -2416,7 +3414,7 @@ export default function App() {
               className="relative bg-[#F8F9FA] dark:bg-zinc-950 w-full max-w-2xl h-full shadow-2xl overflow-y-auto"
             >
               <div className="sticky top-0 bg-[#F8F9FA]/80 dark:bg-zinc-950/80 backdrop-blur-md z-10 p-6 border-b border-black/5 dark:border-white/5 flex items-center gap-4">
-                <button onClick={() => setViewingBorrowerProfile(null)} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full">
+                <button onClick={closeBorrowerProfile} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full">
                   <ArrowLeft size={20} />
                 </button>
                 <h3 className="text-xl font-bold">Borrower Profile</h3>
@@ -2463,17 +3461,54 @@ export default function App() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.3 }}
                 >
-                  <h4 className="font-bold text-lg mb-4 flex items-center gap-2">
-                    <HandCoins size={20} /> Loan History
-                  </h4>
+                  <div className="flex justify-between items-center mb-4">
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="checkbox" 
+                        className="w-4 h-4 rounded border-black/10 dark:border-white/10 text-indigo-600 focus:ring-indigo-500"
+                        checked={loans.filter(l => l.borrower_id === viewingBorrowerProfile.id && l.status === 'Active').length > 0 && loans.filter(l => l.borrower_id === viewingBorrowerProfile.id && l.status === 'Active').every(l => selectedLoanIds.includes(l.id))}
+                        onChange={(e) => {
+                          const activeLoans = loans.filter(l => l.borrower_id === viewingBorrowerProfile.id && l.status === 'Active');
+                          if (e.target.checked) setSelectedLoanIds([...new Set([...selectedLoanIds, ...activeLoans.map(l => l.id)])]);
+                          else setSelectedLoanIds(selectedLoanIds.filter(id => !activeLoans.map(l => l.id).includes(id)));
+                        }}
+                      />
+                      <h4 className="font-bold text-lg flex items-center gap-2">
+                        <HandCoins size={20} /> Loan History
+                      </h4>
+                    </div>
+                    {selectedLoanIds.length > 0 && (
+                      <div className="flex gap-2">
+                        <Button variant="secondary" className="text-xs py-1.5" onClick={() => setShowBulkPaymentModal(true)}>
+                          Bulk Pay ({selectedLoanIds.length})
+                        </Button>
+                        <Button variant="secondary" className="text-xs py-1.5" onClick={() => setShowConsolidateModal(true)}>
+                          Consolidate ({selectedLoanIds.length})
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                   <div className="space-y-4">
                     {loans.filter(l => l.borrower_id === viewingBorrowerProfile.id).map(loan => (
-                      <Card key={loan.id} className="p-5">
+                      <Card key={loan.id} className={`p-5 transition-all ${selectedLoanIds.includes(loan.id) ? 'border-indigo-500 bg-indigo-500/5' : ''}`}>
                         <div className="flex justify-between items-start mb-4">
-                          <div>
-                            <p className="text-xs font-bold text-black/40 dark:text-white/30 uppercase">Loan #{loan.id} • {loan.loan_type}</p>
-                            <h5 className="text-xl font-bold">{user?.currency || '₹'}{(loan.amount || 0).toLocaleString()}</h5>
-                            <p className="text-[10px] text-black/40 dark:text-white/30">Given: {user?.currency || '₹'}{(loan.given_amount || 0).toLocaleString()}</p>
+                          <div className="flex items-start gap-3">
+                            {loan.status === 'Active' && (
+                              <input 
+                                type="checkbox" 
+                                className="mt-1 w-4 h-4 rounded border-black/10 dark:border-white/10 text-indigo-600 focus:ring-indigo-500"
+                                checked={selectedLoanIds.includes(loan.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) setSelectedLoanIds([...selectedLoanIds, loan.id]);
+                                  else setSelectedLoanIds(selectedLoanIds.filter(id => id !== loan.id));
+                                }}
+                              />
+                            )}
+                            <div>
+                              <p className="text-xs font-bold text-black/40 dark:text-white/30 uppercase">Loan #{loan.id} • {loan.loan_type}</p>
+                              <h5 className="text-xl font-bold">{user?.currency || '₹'}{(loan.balance || 0).toLocaleString()}</h5>
+                              <p className="text-[10px] text-black/40 dark:text-white/30">Principal: {user?.currency || '₹'}{(loan.amount || 0).toLocaleString()}</p>
+                            </div>
                           </div>
                           <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full ${loan.status === 'Active' ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' : 'bg-black/10 dark:bg-white/10 text-black/50 dark:text-white/40'}`}>
                             {loan.status}

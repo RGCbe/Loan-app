@@ -126,6 +126,66 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
     FOREIGN KEY (loan_id) REFERENCES loans (id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS chit_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    total_value REAL NOT NULL,
+    members_count INTEGER NOT NULL,
+    duration_months INTEGER NOT NULL,
+    monthly_contribution REAL NOT NULL,
+    commission_percent REAL DEFAULT 5,
+    start_date TEXT NOT NULL,
+    status TEXT DEFAULT 'Active',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS chit_members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    chit_group_id INTEGER NOT NULL,
+    borrower_id INTEGER NOT NULL,
+    slot_number INTEGER NOT NULL,
+    has_won_auction INTEGER DEFAULT 0,
+    auction_won_month INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    FOREIGN KEY (chit_group_id) REFERENCES chit_groups (id) ON DELETE CASCADE,
+    FOREIGN KEY (borrower_id) REFERENCES borrowers (id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS chit_auctions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    chit_group_id INTEGER NOT NULL,
+    month_number INTEGER NOT NULL,
+    auction_date TEXT NOT NULL,
+    winner_member_id INTEGER NOT NULL,
+    bid_amount REAL NOT NULL,
+    payout_amount REAL NOT NULL,
+    dividend_per_member REAL NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    FOREIGN KEY (chit_group_id) REFERENCES chit_groups (id) ON DELETE CASCADE,
+    FOREIGN KEY (winner_member_id) REFERENCES chit_members (id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS chit_payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    chit_group_id INTEGER NOT NULL,
+    chit_member_id INTEGER NOT NULL,
+    month_number INTEGER NOT NULL,
+    amount REAL NOT NULL,
+    payment_date TEXT NOT NULL,
+    status TEXT DEFAULT 'Paid',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    FOREIGN KEY (chit_group_id) REFERENCES chit_groups (id) ON DELETE CASCADE,
+    FOREIGN KEY (chit_member_id) REFERENCES chit_members (id) ON DELETE CASCADE
+  );
 `);
 
 // Migration: Check if user_id exists in borrowers, if not, we need to handle legacy data or clear it.
@@ -797,6 +857,172 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     const info = db.prepare("INSERT INTO payments (user_id, loan_id, amount, payment_date, notes) VALUES (?, ?, ?, ?, ?)").run(userId, loan_id, amount, payment_date, notes);
     logActivity(userId, "Record Payment", `Recorded payment of ${amount} for loan ID: ${loan_id}`);
     res.json({ id: info.lastInsertRowid });
+  });
+
+  app.post("/api/payments/bulk", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const { payments, payment_date, notes } = req.body; // payments: [{ loan_id, amount }]
+    
+    try {
+      db.transaction(() => {
+        for (const p of payments) {
+          db.prepare("INSERT INTO payments (user_id, loan_id, amount, payment_date, notes) VALUES (?, ?, ?, ?, ?)")
+            .run(userId, p.loan_id, p.amount, payment_date, notes || "Bulk Payment");
+        }
+      })();
+      logActivity(userId, "Bulk Payment", `Recorded bulk payment for ${payments.length} loans`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/loans/consolidate", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const { loan_ids, new_loan_details } = req.body;
+    
+    try {
+      db.transaction(() => {
+        let totalBalance = 0;
+        let borrowerId = null;
+
+        for (const id of loan_ids) {
+          const loan = db.prepare("SELECT * FROM loans WHERE id = ? AND user_id = ?").get(id, userId) as any;
+          if (!loan) throw new Error(`Loan ${id} not found`);
+          
+          if (borrowerId === null) borrowerId = loan.borrower_id;
+          else if (borrowerId !== loan.borrower_id) throw new Error("All loans must belong to the same borrower");
+
+          const summary = getLoanSummary(loan);
+          totalBalance += summary.balance;
+
+          // Close original loan
+          db.prepare("UPDATE loans SET status = 'Closed' WHERE id = ? AND user_id = ?").run(id, userId);
+          db.prepare("INSERT INTO activity_log (user_id, action, details) VALUES (?, ?, ?)")
+            .run(userId, "Loan Closed (Consolidated)", `Loan ID ${id} closed due to consolidation`);
+        }
+
+        // Create new consolidated loan
+        const { loan_type, interest_type, interest_rate, installment_amount, start_date, duration } = new_loan_details;
+        const info = db.prepare(`
+          INSERT INTO loans(user_id, borrower_id, amount, given_amount, loan_type, direction, interest_type, interest_rate, installment_amount, start_date, duration)
+          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(userId, borrowerId, totalBalance, totalBalance, loan_type, 'Lent', interest_type, interest_rate, installment_amount, start_date, duration);
+
+        logActivity(userId, "Consolidate Loans", `Consolidated ${loan_ids.length} loans into new loan ID: ${info.lastInsertRowid}`);
+      })();
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- Chit Fund Routes ---
+
+  app.get("/api/chit-groups", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const groups = db.prepare("SELECT * FROM chit_groups WHERE user_id = ? ORDER BY created_at DESC").all(userId);
+    res.json(groups);
+  });
+
+  app.post("/api/chit-groups", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const { name, total_value, members_count, duration_months, monthly_contribution, commission_percent, start_date } = req.body;
+    const info = db.prepare(`
+      INSERT INTO chit_groups (user_id, name, total_value, members_count, duration_months, monthly_contribution, commission_percent, start_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, name, total_value, members_count, duration_months, monthly_contribution, commission_percent, start_date);
+    logActivity(userId, "Create Chit Group", `Created chit group: ${name}`);
+    res.json({ id: info.lastInsertRowid });
+  });
+
+  app.get("/api/chit-groups/:id/members", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const members = db.prepare(`
+      SELECT cm.*, b.name as borrower_name, b.phone 
+      FROM chit_members cm
+      JOIN borrowers b ON cm.borrower_id = b.id
+      WHERE cm.chit_group_id = ? AND cm.user_id = ?
+      ORDER BY cm.slot_number ASC
+    `).all(req.params.id, userId);
+    res.json(members);
+  });
+
+  app.post("/api/chit-groups/:id/members", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const { borrower_id, slot_number } = req.body;
+    const info = db.prepare(`
+      INSERT INTO chit_members (user_id, chit_group_id, borrower_id, slot_number)
+      VALUES (?, ?, ?, ?)
+    `).run(userId, req.params.id, borrower_id, slot_number);
+    logActivity(userId, "Add Chit Member", `Added member to chit group ID: ${req.params.id}`);
+    res.json({ id: info.lastInsertRowid });
+  });
+
+  app.get("/api/chit-groups/:id/auctions", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const auctions = db.prepare(`
+      SELECT ca.*, b.name as winner_name
+      FROM chit_auctions ca
+      JOIN chit_members cm ON ca.winner_member_id = cm.id
+      JOIN borrowers b ON cm.borrower_id = b.id
+      WHERE ca.chit_group_id = ? AND ca.user_id = ?
+      ORDER BY ca.month_number ASC
+    `).all(req.params.id, userId);
+    res.json(auctions);
+  });
+
+  app.post("/api/chit-groups/:id/auctions", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const { month_number, auction_date, winner_member_id, bid_amount, payout_amount, dividend_per_member } = req.body;
+    
+    db.transaction(() => {
+      const info = db.prepare(`
+        INSERT INTO chit_auctions (user_id, chit_group_id, month_number, auction_date, winner_member_id, bid_amount, payout_amount, dividend_per_member)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(userId, req.params.id, month_number, auction_date, winner_member_id, bid_amount, payout_amount, dividend_per_member);
+
+      db.prepare("UPDATE chit_members SET has_won_auction = 1, auction_won_month = ? WHERE id = ?").run(month_number, winner_member_id);
+    })();
+
+    logActivity(userId, "Record Auction", `Recorded auction for month ${month_number} in chit group ID: ${req.params.id}`);
+    res.json({ success: true });
+  });
+
+  app.get("/api/chit-groups/:id/payments", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const payments = db.prepare("SELECT * FROM chit_payments WHERE chit_group_id = ? AND user_id = ?").all(req.params.id, userId);
+    res.json(payments);
+  });
+
+  app.post("/api/chit-payments", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const { chit_group_id, chit_member_id, month_number, amount, payment_date } = req.body;
+    const info = db.prepare(`
+      INSERT INTO chit_payments (user_id, chit_group_id, chit_member_id, month_number, amount, payment_date)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(userId, chit_group_id, chit_member_id, month_number, amount, payment_date);
+    res.json({ id: info.lastInsertRowid });
+  });
+
+  app.post("/api/chit-payments/bulk", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const { chit_group_id, payments, month_number, payment_date } = req.body; // payments: [{ chit_member_id, amount }]
+    
+    try {
+      db.transaction(() => {
+        for (const p of payments) {
+          db.prepare(`
+            INSERT INTO chit_payments (user_id, chit_group_id, chit_member_id, month_number, amount, payment_date)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).run(userId, chit_group_id, p.chit_member_id, month_number, p.amount, payment_date);
+        }
+      })();
+      logActivity(userId, "Bulk Chit Payment", `Recorded bulk payment for ${payments.length} members in group ${chit_group_id}`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // Reports

@@ -61,3 +61,55 @@ export interface ActivityLog {
   details: string;
   created_at: string;
 }
+
+export interface ChitGroup {
+  id: number;
+  name: string;
+  total_value: number;
+  members_count: number;
+  duration_months: number;
+  monthly_contribution: number;
+  commission_percent: number;
+  start_date: string;
+  status: 'Active' | 'Completed';
+  created_at: string;
+}
+
+export interface ChitMember {
+  id: number;
+  chit_group_id: number;
+  borrower_id: number;
+  borrower_name?: string;
+  phone?: string;
+  slot_number: number;
+  has_won_auction: number;
+  auction_won_month?: number;
+  created_at: string;
+}
+
+export interface ChitAuction {
+  id: number;
+  chit_group_id: number;
+  month_number: number;
+  auction_date: string;
+  winner_member_id: number;
+  winner_name?: string;
+  bid_amount: number; // The discount amount
+  payout_amount: number; // total_value - bid_amount - commission
+  dividend_per_member: number; // bid_amount / members_count
+  created_at: string;
+}
+
+export interface ChitPayment {
+  id: number;
+  chit_group_id: number;
+  chit_member_id: number;
+  borrower_name?: string;
+  month_number: number;
+  amount: number;
+  payment_date: string;
+  payment_method?: string;
+  notes?: string;
+  status: 'Paid' | 'Pending';
+  created_at: string;
+}
