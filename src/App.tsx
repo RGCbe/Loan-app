@@ -3611,8 +3611,8 @@ export default function App() {
             <Input label="Start Date" name="start_date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Input label={`Repayment Amount (${user?.currency || '₹'})`} name="amount" type="number" required placeholder="10000" />
-            <Input label={`Given Amount (${user?.currency || '₹'})`} name="given_amount" type="number" required placeholder="8000" />
+            <Input label={`Loan Amount (${user?.currency || '₹'})`} name="amount" type="number" required placeholder="10000" />
+            <Input label={`Cash Given (${user?.currency || '₹'})`} name="given_amount" type="number" required placeholder="8000" />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Interest Rate (%)" name="interest_rate" type="number" step="0.1" placeholder="5.0" />
@@ -3669,8 +3669,8 @@ export default function App() {
             <Input label="Start Date" name="start_date" type="date" required defaultValue={selectedLoan?.start_date} />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Input label={`Repayment Amount (${user?.currency || '₹'})`} name="amount" type="number" required defaultValue={selectedLoan?.amount} />
-            <Input label={`Given Amount (${user?.currency || '₹'})`} name="given_amount" type="number" required defaultValue={selectedLoan?.given_amount} />
+            <Input label={`Loan Amount (${user?.currency || '₹'})`} name="amount" type="number" required defaultValue={selectedLoan?.amount} />
+            <Input label={`Cash Given (${user?.currency || '₹'})`} name="given_amount" type="number" required defaultValue={selectedLoan?.given_amount} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Interest Rate (%)" name="interest_rate" type="number" step="0.1" defaultValue={selectedLoan?.interest_rate} />
