@@ -12,3 +12,6 @@ Thumbs.db
 .claude/
 .vscode/
 .idea/
+*.jks
+*.keystore
+android/
