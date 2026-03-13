@@ -658,10 +658,10 @@ export default function App() {
     if (res.ok) {
       setShowBorrowerModal(false);
       fetchBorrowers();
-      showToast('Borrower added successfully');
+      showToast('Contact added successfully');
     } else {
-      const err = await res.json().catch(() => ({ error: 'Failed to add borrower' }));
-      showToast(err.error || 'Failed to add borrower', 'error');
+      const err = await res.json().catch(() => ({ error: 'Failed to add contact' }));
+      showToast(err.error || 'Failed to add contact', 'error');
     }
     setIsSubmitting(false);
   };
@@ -690,10 +690,10 @@ export default function App() {
       if (viewingBorrowerProfile?.id === editingBorrower.id) {
         setViewingBorrowerProfile({ ...viewingBorrowerProfile, ...data } as Borrower);
       }
-      showToast('Borrower updated successfully');
+      showToast('Contact updated successfully');
     } else {
-      const err = await res.json().catch(() => ({ error: 'Failed to update borrower' }));
-      showToast(err.error || 'Failed to update borrower', 'error');
+      const err = await res.json().catch(() => ({ error: 'Failed to update contact' }));
+      showToast(err.error || 'Failed to update contact', 'error');
     }
     setIsSubmitting(false);
   };
@@ -710,9 +710,9 @@ export default function App() {
       fetchBorrowers();
       fetchLoans();
       if (viewingBorrowerProfile?.id === borrower.id) setViewingBorrowerProfile(null);
-      showToast('Borrower deleted');
+      showToast('Contact deleted');
     } else {
-      showToast('Failed to delete borrower', 'error');
+      showToast('Failed to delete contact', 'error');
     }
   };
 
@@ -1095,7 +1095,7 @@ export default function App() {
           showToast('Invalid backup file format', 'error');
           return;
         }
-        if (!confirm(`Import ${data.borrowers.length} borrowers, ${data.loans.length} loans, and ${(data.payments || []).length} payments? This will ADD to your existing data.`)) return;
+        if (!confirm(`Import ${data.borrowers.length} contacts, ${data.loans.length} loans, and ${(data.payments || []).length} payments? This will ADD to your existing data.`)) return;
         const res = await offlineFetch('/api/user/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -1532,8 +1532,8 @@ export default function App() {
                   <Plus size={20} />
                 </div>
                 <div>
-                  <p className="font-bold">Add Borrower</p>
-                  <p className="text-xs text-black/40 dark:text-white/30">Register a new client</p>
+                  <p className="font-bold">Add Contact</p>
+                  <p className="text-xs text-black/40 dark:text-white/30">Add a new contact</p>
                 </div>
               </motion.button>
               <motion.button 
@@ -1593,7 +1593,7 @@ export default function App() {
             />
           </div>
           <Button onClick={() => setShowBorrowerModal(true)} className="w-full md:w-auto">
-            <Plus size={20} /> Add Borrower
+            <Plus size={20} /> Add Contact
           </Button>
         </div>
       </FadeIn>
@@ -1601,9 +1601,9 @@ export default function App() {
       {filteredBorrowers.length === 0 ? (
         <Card className="p-12 text-center" noHover>
           <Users size={48} className="mx-auto text-black/10 dark:text-white/10 mb-4" />
-          <h3 className="text-lg font-bold mb-1">{borrowers.length === 0 ? 'No borrowers yet' : 'No results found'}</h3>
-          <p className="text-sm text-black/40 dark:text-white/30 mb-4">{borrowers.length === 0 ? 'Add your first borrower to get started.' : 'Try a different search term.'}</p>
-          {borrowers.length === 0 && <Button onClick={() => setShowBorrowerModal(true)}><Plus size={16} /> Add Borrower</Button>}
+          <h3 className="text-lg font-bold mb-1">{borrowers.length === 0 ? 'No contacts yet' : 'No results found'}</h3>
+          <p className="text-sm text-black/40 dark:text-white/30 mb-4">{borrowers.length === 0 ? 'Add your first contact to get started.' : 'Try a different search term.'}</p>
+          {borrowers.length === 0 && <Button onClick={() => setShowBorrowerModal(true)}><Plus size={16} /> Add Contact</Button>}
         </Card>
       ) : (<>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -1970,7 +1970,7 @@ export default function App() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-black/30 dark:text-white/20" size={18} />
             <input 
               type="text" 
-              placeholder="Search by borrower or ID..." 
+              placeholder="Search by contact or ID..." 
               className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 bg-white dark:bg-zinc-900 text-black dark:text-white"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -1995,7 +1995,7 @@ export default function App() {
           <thead>
             <tr className="text-xs font-bold uppercase tracking-wider text-black/40 dark:text-white/30">
               <th className="px-4 py-2">Loan ID</th>
-              <th className="px-4 py-2">Borrower</th>
+              <th className="px-4 py-2">Contact</th>
               <th className="px-4 py-2">Repay/Given</th>
               <th className="px-4 py-2">Type</th>
               <th className="px-4 py-2">Interest/Inst.</th>
@@ -2163,7 +2163,7 @@ export default function App() {
             <table className="w-full text-left">
               <thead className="bg-black/5 dark:bg-white/5 text-[10px] font-bold uppercase tracking-wider text-black/40 dark:text-white/30">
                 <tr>
-                  <th className="px-6 py-3">Borrower</th>
+                  <th className="px-6 py-3">Contact</th>
                   <th className="px-6 py-3">Direction</th>
                   <th className="px-6 py-3">Principal (Rem.)</th>
                   <th className="px-6 py-3">Interest Accrued</th>
@@ -2670,13 +2670,13 @@ export default function App() {
       <Modal isOpen={isOpen} onClose={onClose} title="Add Member to Group">
         <div className="space-y-4">
           <div>
-            <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Select Borrower</label>
+            <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Select Contact</label>
             <select
               className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
               value={selectedBorrowerId}
               onChange={e => setSelectedBorrowerId(Number(e.target.value))}
             >
-              <option value={0}>Choose a borrower...</option>
+              <option value={0}>Choose a contact...</option>
               {borrowers.map(b => (
                 <option key={b.id} value={b.id}>{b.name} ({b.phone})</option>
               ))}
@@ -2699,7 +2699,7 @@ export default function App() {
               onChange={e => setIsJoint(e.target.checked)}
               className="w-4 h-4 rounded"
             />
-            <label htmlFor="joint-check" className="text-sm font-medium">Joint Borrower (split with partner)</label>
+            <label htmlFor="joint-check" className="text-sm font-medium">Joint Member (split with partner)</label>
           </div>
           {isJoint && (
             <div className="space-y-3 p-4 rounded-xl border border-indigo-500/20 bg-indigo-500/5">
@@ -3295,7 +3295,7 @@ export default function App() {
         <div className="flex flex-1 justify-around md:flex-col md:justify-start md:px-3 gap-1 py-2 md:py-0">
           {[
             { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-            { id: 'borrowers', icon: Users, label: 'Borrowers' },
+            { id: 'borrowers', icon: Users, label: 'Contacts' },
             { id: 'loans', icon: HandCoins, label: 'Loans' },
             { id: 'chitfunds', icon: CircleDollarSign, label: 'Chit Funds' },
             { id: 'reports', icon: FileText, label: 'Reports' },
@@ -3636,7 +3636,7 @@ export default function App() {
       <Modal 
         isOpen={showBorrowerModal} 
         onClose={() => setShowBorrowerModal(false)} 
-        title="Add New Borrower"
+        title="Add New Contact"
       >
         <form onSubmit={handleAddBorrower} className="space-y-4">
           <Input label="Full Name" name="name" required placeholder="John Doe" />
@@ -3649,14 +3649,14 @@ export default function App() {
               className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 transition-all bg-white dark:bg-zinc-800 text-black dark:text-white min-h-[100px]" 
             />
           </div>
-          <Button type="submit" className="w-full py-3" disabled={isSubmitting}>{isSubmitting ? 'Saving...' : 'Save Borrower'}</Button>
+          <Button type="submit" className="w-full py-3" disabled={isSubmitting}>{isSubmitting ? 'Saving...' : 'Save Contact'}</Button>
         </form>
       </Modal>
 
       <Modal
         isOpen={showEditBorrowerModal}
         onClose={() => { setShowEditBorrowerModal(false); setEditingBorrower(null); }}
-        title="Edit Borrower"
+        title="Edit Contact"
       >
         {editingBorrower && (
           <form onSubmit={handleEditBorrower} className="space-y-4">
@@ -3671,7 +3671,7 @@ export default function App() {
                 className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 transition-all bg-white dark:bg-zinc-800 text-black dark:text-white min-h-[100px]"
               />
             </div>
-            <Button type="submit" className="w-full py-3" disabled={isSubmitting}>{isSubmitting ? 'Saving...' : 'Update Borrower'}</Button>
+            <Button type="submit" className="w-full py-3" disabled={isSubmitting}>{isSubmitting ? 'Saving...' : 'Update Contact'}</Button>
           </form>
         )}
       </Modal>
@@ -3683,11 +3683,11 @@ export default function App() {
       >
         <form onSubmit={handleCreateLoan} className="space-y-4">
           <Select 
-            label="Select Borrower" 
+            label="Select Contact" 
             name="borrower_id" 
             required 
             options={[
-              { value: '', label: 'Choose a borrower...' },
+              { value: '', label: 'Choose a contact...' },
               ...borrowers.map(b => ({ value: b.id.toString(), label: b.name }))
             ]} 
           />
@@ -3916,7 +3916,7 @@ export default function App() {
         <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-4 text-xs text-black/70 dark:text-white/60 leading-relaxed">
           <section>
             <h4 className="font-bold text-black dark:text-white mb-1 uppercase tracking-wider">1. Information Collection</h4>
-            <p>We collect your username and email address for account management. We also store the loan and borrower records you enter into the application. This data is stored on our secure servers and is used solely to provide the service to you.</p>
+            <p>We collect your username and email address for account management. We also store the loan and contact records you enter into the application. This data is stored on our secure servers and is used solely to provide the service to you.</p>
           </section>
           
           <section>
@@ -4054,7 +4054,7 @@ export default function App() {
         <Button onClick={() => setShowPublishModal(false)} className="w-full mt-6">Got it, Let's Go!</Button>
       </Modal>
 
-      {/* Borrower Profile View */}
+      {/* Contact Profile View */}
       <AnimatePresence>
         {viewingBorrowerProfile && (
           <div className="fixed inset-0 z-50 flex items-center justify-end">
@@ -4076,7 +4076,7 @@ export default function App() {
                 <button onClick={closeBorrowerProfile} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full">
                   <ArrowLeft size={20} />
                 </button>
-                <h3 className="text-xl font-bold">Borrower Profile</h3>
+                <h3 className="text-xl font-bold">Contact Profile</h3>
               </div>
 
               <div className="p-8 space-y-8">
@@ -4091,7 +4091,7 @@ export default function App() {
                   </div>
                   <div>
                     <h2 className="text-3xl font-black">{viewingBorrowerProfile.name}</h2>
-                    <p className="text-black/40 dark:text-white/30 font-mono">Borrower ID: #{viewingBorrowerProfile.id}</p>
+                    <p className="text-black/40 dark:text-white/30 font-mono">Contact ID: #{viewingBorrowerProfile.id}</p>
                     <div className="flex gap-2 mt-3">
                       <Button variant="secondary" className="text-xs py-1.5" onClick={() => openEditBorrower(viewingBorrowerProfile)}><Edit2 size={14} /> Edit</Button>
                       <Button variant="danger" className="text-xs py-1.5" onClick={() => handleDeleteBorrower(viewingBorrowerProfile)}><Trash2 size={14} /> Delete</Button>
