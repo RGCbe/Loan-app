@@ -2077,6 +2077,11 @@ export default function App() {
                           Payment
                         </Button>
                       )}
+                      {loan.status === 'Active' && loan.loan_type === 'Interest Only' && new Date(loan.start_date) < new Date() && (
+                        <Button variant="ghost" className="text-xs p-2 text-indigo-500" onClick={() => handleGenerateInterest(loan.id)}>
+                          <RefreshCw size={14} />
+                        </Button>
+                      )}
                       {loan.status === 'Active' && (
                         <Button variant="ghost" className="text-xs p-2" onClick={() => handleCloseLoan(loan.id)}>
                           Close

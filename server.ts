@@ -982,44 +982,57 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     const existingPayments = db.prepare("SELECT payment_date FROM payments WHERE loan_id = ? AND user_id = ?").all(loan.id, userId) as any[];
     const existingDates = new Set(existingPayments.map((p: any) => p.payment_date));
 
-    const generated: string[] = [];
+    // Helper to format date as YYYY-MM-DD in local timezone (avoids UTC shift)
+    const formatDate = (d: Date) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
 
-    if (loan.interest_type === 'Monthly') {
-      const current = new Date(startDate);
-      current.setMonth(current.getMonth() + 1); // First interest due one period after start
-      while (current <= now) {
-        const dateStr = current.toISOString().split('T')[0];
-        if (!existingDates.has(dateStr)) {
-          db.prepare("INSERT INTO payments (user_id, loan_id, amount, payment_date, notes) VALUES (?, ?, ?, ?, ?)")
-            .run(userId, loan.id, interestAmount, dateStr, 'Auto-generated monthly interest');
-          generated.push(dateStr);
+    const generated: string[] = [];
+    const nowStr = formatDate(now);
+    const insertStmt = db.prepare("INSERT INTO payments (user_id, loan_id, amount, payment_date, notes) VALUES (?, ?, ?, ?, ?)");
+
+    try {
+      db.transaction(() => {
+        if (loan.interest_type === 'Monthly') {
+          const current = new Date(startDate);
+          current.setMonth(current.getMonth() + 1);
+          while (formatDate(current) <= nowStr) {
+            const dateStr = formatDate(current);
+            if (!existingDates.has(dateStr)) {
+              insertStmt.run(userId, loan.id, interestAmount, dateStr, 'Monthly interest collected');
+              generated.push(dateStr);
+            }
+            current.setMonth(current.getMonth() + 1);
+          }
+        } else if (loan.interest_type === 'Weekly') {
+          const current = new Date(startDate);
+          current.setDate(current.getDate() + 7);
+          while (formatDate(current) <= nowStr) {
+            const dateStr = formatDate(current);
+            if (!existingDates.has(dateStr)) {
+              insertStmt.run(userId, loan.id, interestAmount, dateStr, 'Weekly interest collected');
+              generated.push(dateStr);
+            }
+            current.setDate(current.getDate() + 7);
+          }
+        } else if (loan.interest_type === 'Daily') {
+          const current = new Date(startDate);
+          current.setDate(current.getDate() + 1);
+          while (formatDate(current) <= nowStr) {
+            const dateStr = formatDate(current);
+            if (!existingDates.has(dateStr)) {
+              insertStmt.run(userId, loan.id, interestAmount, dateStr, 'Daily interest collected');
+              generated.push(dateStr);
+            }
+            current.setDate(current.getDate() + 1);
+          }
         }
-        current.setMonth(current.getMonth() + 1);
-      }
-    } else if (loan.interest_type === 'Weekly') {
-      const current = new Date(startDate);
-      current.setDate(current.getDate() + 7);
-      while (current <= now) {
-        const dateStr = current.toISOString().split('T')[0];
-        if (!existingDates.has(dateStr)) {
-          db.prepare("INSERT INTO payments (user_id, loan_id, amount, payment_date, notes) VALUES (?, ?, ?, ?, ?)")
-            .run(userId, loan.id, interestAmount, dateStr, 'Auto-generated weekly interest');
-          generated.push(dateStr);
-        }
-        current.setDate(current.getDate() + 7);
-      }
-    } else if (loan.interest_type === 'Daily') {
-      const current = new Date(startDate);
-      current.setDate(current.getDate() + 1);
-      while (current <= now) {
-        const dateStr = current.toISOString().split('T')[0];
-        if (!existingDates.has(dateStr)) {
-          db.prepare("INSERT INTO payments (user_id, loan_id, amount, payment_date, notes) VALUES (?, ?, ?, ?, ?)")
-            .run(userId, loan.id, interestAmount, dateStr, 'Auto-generated daily interest');
-          generated.push(dateStr);
-        }
-        current.setDate(current.getDate() + 1);
-      }
+      })();
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
     }
 
     logActivity(userId, "Generate Interest", `Generated ${generated.length} interest entries for loan ID: ${loan.id}`);
