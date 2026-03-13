@@ -1,8 +1,8 @@
 import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.lendtrack.app',
-  appName: 'LendTrack',
+  appId: 'com.metrix.app',
+  appName: 'Metrix',
   webDir: 'dist',
   server: {
     androidScheme: 'https'

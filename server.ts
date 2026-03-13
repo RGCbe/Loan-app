@@ -243,12 +243,44 @@ if (userResult) {
   }
 }
 
+// Seed admin account on first run
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+
+if (ADMIN_USERNAME && ADMIN_PASSWORD) {
+  const existing = db.prepare("SELECT id FROM users WHERE username = ?").get(ADMIN_USERNAME) as any;
+  if (!existing) {
+    (async () => {
+      const hashed = await bcrypt.hash(ADMIN_PASSWORD, 10);
+      const info = db.prepare(
+        "INSERT INTO users (username, password, is_premium, terms_accepted) VALUES (?, ?, 1, 1)"
+      ).run(ADMIN_USERNAME, hashed);
+      db.prepare("INSERT INTO capital (user_id, amount) VALUES (?, 0)").run(info.lastInsertRowid);
+      logActivity(Number(info.lastInsertRowid), "Signup", "Admin account seeded");
+      console.log(`Admin account "${ADMIN_USERNAME}" created with premium access.`);
+    })();
+  }
+}
+
 async function startServer() {
   const app = express();
   app.set("trust proxy", 1);
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
   app.use(express.json());
+
+  // --- Security Headers ---
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '0');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    if (process.env.NODE_ENV === 'production') {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    next();
+  });
 
   // --- Security: Rate Limiting ---
   const authLimiter = rateLimit({
@@ -305,7 +337,7 @@ async function startServer() {
   app.post("/api/auth/signup", authLimiter, async (req, res) => {
     let { username, password, email, recovery_question, recovery_answer, terms_accepted } = req.body;
     if (!username || !password) return res.status(400).json({ error: "Username and password are required." });
-    if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
+    if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters." });
     if (email && !isValidEmail(email)) return res.status(400).json({ error: "Invalid email format." });
     if (!username.endsWith("@metrix")) {
       username = `${username}@metrix`;
@@ -330,9 +362,15 @@ async function startServer() {
       // Initialize capital for new user
       db.prepare("INSERT INTO capital (user_id, amount) VALUES (?, 0)").run(userId);
 
+      // First registered user (id=1) is the admin — auto-grant premium
+      const isPremium = Number(userId) === 1 ? 1 : 0;
+      if (isPremium) {
+        db.prepare("UPDATE users SET is_premium = 1 WHERE id = ?").run(userId);
+      }
+
       const token = jwt.sign({ id: userId, username }, JWT_SECRET, { expiresIn: '7d' });
       logActivity(Number(userId), "Signup", "New account created");
-      res.json({ token, user: { id: userId, username, is_premium: 0, backup_enabled: 0, pin_enabled: 0 } });
+      res.json({ token, user: { id: userId, username, is_premium: isPremium, backup_enabled: 0, pin_enabled: 0 } });
     } catch (err: any) {
       if (err.message.includes("UNIQUE constraint failed")) {
         return res.status(400).json({ error: "Username already exists." });
@@ -376,6 +414,14 @@ async function startServer() {
     res.json(user);
   });
 
+  // --- Token Refresh ---
+  app.post("/api/auth/refresh", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const user = db.prepare("SELECT id, username FROM users WHERE id = ?").get(req.user!.id) as any;
+    if (!user) return res.status(404).json({ error: "User not found." });
+    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token });
+  });
+
   // Recovery Routes
   app.post("/api/auth/recovery/find-username", authLimiter, (req, res) => {
     const { email } = req.body;
@@ -396,7 +442,7 @@ async function startServer() {
   app.post("/api/auth/recovery/reset-password", authLimiter, async (req, res) => {
     const { identifier, answer, newPassword } = req.body;
     if (!identifier || !answer || !newPassword) return res.status(400).json({ error: "All fields are required." });
-    if (newPassword.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
+    if (newPassword.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters." });
     const user = db.prepare("SELECT id, recovery_answer FROM users WHERE username = ? OR email = ?").get(identifier, identifier) as any;
 
     // Generic error to prevent enumeration
@@ -521,7 +567,7 @@ async function startServer() {
     const userId = req.user!.id;
     const { current_password, new_password } = req.body;
     if (!current_password || !new_password) return res.status(400).json({ error: "Current and new password are required" });
-    if (new_password.length < 6) return res.status(400).json({ error: "New password must be at least 6 characters" });
+    if (new_password.length < 8) return res.status(400).json({ error: "New password must be at least 8 characters" });
 
     const user = db.prepare("SELECT password FROM users WHERE id = ?").get(userId) as any;
     if (!user) return res.status(404).json({ error: "User not found" });

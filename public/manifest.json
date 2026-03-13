@@ -1,7 +1,7 @@
 {
-  "name": "LendTrack - Loan Management",
-  "short_name": "LendTrack",
-  "description": "Professional loan and debt management system for individual lenders.",
+  "name": "Metrix - Finance Simplified",
+  "short_name": "Metrix",
+  "description": "Professional loan and debt management platform.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

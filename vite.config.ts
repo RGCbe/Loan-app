@@ -12,8 +12,8 @@ export default defineConfig(() => {
       VitePWA({
         registerType: 'autoUpdate',
         manifest: {
-          name: 'LendTrack Premium',
-          short_name: 'LendTrack',
+          name: 'Metrix - Finance Simplified',
+          short_name: 'Metrix',
           description: 'Professional Debt & Loan Management',
           theme_color: '#000000',
           background_color: '#ffffff',

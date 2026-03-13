@@ -1,4 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#000000"/>
-  <text x="256" y="340" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="320" fill="#ffffff">L</text>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e2b04a"/>
+      <stop offset="100%" stop-color="#f0c75e"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="108" fill="url(#bg)"/>
+  <!-- Outer ring -->
+  <circle cx="256" cy="240" r="140" fill="none" stroke="url(#accent)" stroke-width="6" opacity="0.3"/>
+  <!-- Inner coin circle -->
+  <circle cx="256" cy="240" r="110" fill="url(#accent)" opacity="0.12"/>
+  <circle cx="256" cy="240" r="110" fill="none" stroke="url(#accent)" stroke-width="4"/>
+  <!-- M letter -->
+  <text x="256" y="290" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="170" fill="url(#accent)">M</text>
+  <!-- Track lines (representing ledger/tracking) -->
+  <line x1="160" y1="400" x2="352" y2="400" stroke="url(#accent)" stroke-width="4" stroke-linecap="round" opacity="0.6"/>
+  <line x1="190" y1="425" x2="322" y2="425" stroke="url(#accent)" stroke-width="3" stroke-linecap="round" opacity="0.35"/>
+  <line x1="215" y1="448" x2="297" y2="448" stroke="url(#accent)" stroke-width="2" stroke-linecap="round" opacity="0.2"/>
 </svg>

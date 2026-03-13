@@ -48,7 +48,7 @@ const ThreeVisuals = lazy(() => import('./components/ThreeVisuals').then(m => ({
 
 const AdComponent = ({ isPremium, onUpgrade }: { isPremium: boolean, onUpgrade: () => void }) => {
   if (isPremium) return null;
-  
+
   return (
     <Card className="p-4 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border-indigo-500/20 relative overflow-hidden group mb-6">
       <div className="flex items-center justify-between relative z-10">
@@ -68,6 +68,49 @@ const AdComponent = ({ isPremium, onUpgrade }: { isPremium: boolean, onUpgrade: 
     </Card>
   );
 };
+
+const PricingModal = ({ isOpen, onClose, onUpgrade }: { isOpen: boolean, onClose: () => void, onUpgrade: () => void }) => (
+  <AnimatePresence>
+    {isOpen && (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-white/10"
+        >
+          <div className="p-8 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-gradient-to-r from-indigo-500/10 to-purple-500/10">
+            <div>
+              <h2 className="text-2xl font-bold flex items-center gap-2">
+                <Sparkles className="text-indigo-500" />
+                Upgrade to Premium
+              </h2>
+              <p className="text-sm text-black/40 dark:text-white/40 mt-1">Unlock all features</p>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all">
+              <X size={24} />
+            </button>
+          </div>
+
+          <div className="p-8 space-y-4">
+            <div className="text-center mb-4">
+              <span className="text-4xl font-black">$100</span>
+              <span className="text-sm text-black/40 dark:text-white/30"> one-time</span>
+            </div>
+            <ul className="text-sm text-black/70 dark:text-white/60 space-y-3">
+              <li className="flex items-center gap-3"><ShieldCheck size={16} className="text-green-500" /> No Advertisements</li>
+              <li className="flex items-center gap-3"><ShieldCheck size={16} className="text-green-500" /> Cloud Backups</li>
+              <li className="flex items-center gap-3"><ShieldCheck size={16} className="text-green-500" /> Priority Support</li>
+              <li className="flex items-center gap-3"><ShieldCheck size={16} className="text-green-500" /> All Features Unlocked</li>
+            </ul>
+            <Button onClick={onUpgrade} className="w-full py-3 mt-4">Buy Now</Button>
+            <p className="text-[10px] text-center text-black/30 dark:text-white/20">Secure payment via Google Play / App Store</p>
+          </div>
+        </motion.div>
+      </div>
+    )}
+  </AnimatePresence>
+);
 
 // --- Components ---
 
@@ -171,48 +214,6 @@ const Select = ({ label, options, ...props }: { label?: string, options: { value
   </div>
 );
 
-const PricingModal = ({ isOpen, onClose, onUpgrade }: { isOpen: boolean, onClose: () => void, onUpgrade: () => void }) => (
-  <AnimatePresence>
-    {isOpen && (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-white/10"
-        >
-          <div className="p-8 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-gradient-to-r from-indigo-500/10 to-purple-500/10">
-            <div>
-              <h2 className="text-2xl font-bold flex items-center gap-2">
-                <Sparkles className="text-indigo-500" />
-                Upgrade to Premium
-              </h2>
-              <p className="text-sm text-black/40 dark:text-white/40 mt-1">Unlock all features</p>
-            </div>
-            <button onClick={onClose} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all">
-              <X size={24} />
-            </button>
-          </div>
-
-          <div className="p-8 space-y-4">
-            <div className="text-center mb-4">
-              <span className="text-4xl font-black">$4.99</span>
-              <span className="text-sm text-black/40 dark:text-white/30">/month</span>
-            </div>
-            <ul className="text-sm text-black/70 dark:text-white/60 space-y-3">
-              <li className="flex items-center gap-3"><ShieldCheck size={16} className="text-green-500" /> No Advertisements</li>
-              <li className="flex items-center gap-3"><ShieldCheck size={16} className="text-green-500" /> Cloud Backups</li>
-              <li className="flex items-center gap-3"><ShieldCheck size={16} className="text-green-500" /> Priority Support</li>
-              <li className="flex items-center gap-3"><ShieldCheck size={16} className="text-green-500" /> All Features Unlocked</li>
-            </ul>
-            <Button onClick={onUpgrade} className="w-full py-3 mt-4">Subscribe Now</Button>
-            <p className="text-[10px] text-center text-black/30 dark:text-white/20">Secure payment via Google Play / App Store</p>
-          </div>
-        </motion.div>
-      </div>
-    )}
-  </AnimatePresence>
-);
 
 // --- Main App ---
 
@@ -377,6 +378,26 @@ export default function App() {
       window.removeEventListener('online', goOnline);
       window.removeEventListener('offline', goOffline);
     };
+  }, [token]);
+
+  // Auto-refresh JWT token every 6 days (token expires in 7d)
+  useEffect(() => {
+    if (!token) return;
+    const REFRESH_INTERVAL = 6 * 24 * 60 * 60 * 1000; // 6 days
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          localStorage.setItem('token', data.token);
+          setToken(data.token);
+        }
+      } catch { /* offline — will retry next interval */ }
+    }, REFRESH_INTERVAL);
+    return () => clearInterval(interval);
   }, [token]);
 
   // Wrap mutation calls to track queue count
@@ -930,7 +951,7 @@ export default function App() {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `lendtrack_backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `metrix_backup_${new Date().toISOString().split('T')[0]}.json`;
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);
@@ -2117,8 +2138,8 @@ export default function App() {
                 setIsSubmitting(false);
               }} className="space-y-3">
                 <input name="current_password" type="password" required placeholder="Current password" className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 bg-white dark:bg-zinc-800 text-black dark:text-white text-sm" />
-                <input name="new_password" type="password" required minLength={6} placeholder="New password (min 6 chars)" className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 bg-white dark:bg-zinc-800 text-black dark:text-white text-sm" />
-                <input name="confirm_password" type="password" required minLength={6} placeholder="Confirm new password" className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 bg-white dark:bg-zinc-800 text-black dark:text-white text-sm" />
+                <input name="new_password" type="password" required minLength={8} placeholder="New password (min 8 chars)" className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 bg-white dark:bg-zinc-800 text-black dark:text-white text-sm" />
+                <input name="confirm_password" type="password" required minLength={8} placeholder="Confirm new password" className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 bg-white dark:bg-zinc-800 text-black dark:text-white text-sm" />
                 <Button type="submit" className="w-full py-2.5 text-sm" disabled={isSubmitting}>{isSubmitting ? 'Changing...' : 'Change Password'}</Button>
               </form>
             </div>
@@ -2276,7 +2297,7 @@ export default function App() {
             >
               <div className="flex items-center gap-3">
                 <Download size={18} className="text-indigo-500" />
-                <span className="font-medium text-indigo-600 dark:text-indigo-400">Install LendTrack App</span>
+                <span className="font-medium text-indigo-600 dark:text-indigo-400">Install Metrix App</span>
               </div>
               <Plus size={16} className="text-indigo-400 group-hover:rotate-90 transition-transform" />
             </button>
@@ -2296,7 +2317,7 @@ export default function App() {
       </Card>
 
       <div className="text-center py-4">
-        <p className="text-[10px] font-bold text-black/20 dark:text-white/10 uppercase tracking-[0.2em]">LendTrack v1.2.0 • Made with Love</p>
+        <p className="text-[10px] font-bold text-black/20 dark:text-white/10 uppercase tracking-[0.2em]">Metrix v2.0.0 • Finance Simplified</p>
       </div>
     </motion.div>
   );
@@ -2878,8 +2899,8 @@ export default function App() {
       <div className="min-h-screen bg-[#F8F9FA] dark:bg-zinc-950 flex items-center justify-center p-6">
         <Card className="w-full max-w-md p-8">
           <div className="flex flex-col items-center mb-8">
-            <div className="w-16 h-16 bg-black dark:bg-white rounded-2xl flex items-center justify-center text-white dark:text-black font-black text-3xl mb-4 shadow-xl">L</div>
-            <h1 className="text-3xl font-black tracking-tighter">LendTrack</h1>
+            <div className="w-16 h-16 bg-black dark:bg-white rounded-2xl flex items-center justify-center text-white dark:text-black font-black text-3xl mb-4 shadow-xl">M</div>
+            <h1 className="text-3xl font-black tracking-tighter">Metrix</h1>
             <p className="text-black/40 dark:text-white/30 text-sm font-bold uppercase tracking-widest mt-1">
               {isLogin ? 'Access Vault' : 'Initialize Account'}
             </p>
@@ -2970,8 +2991,8 @@ export default function App() {
       {/* Sidebar / Nav */}
       <nav aria-label="Main navigation" className="fixed bottom-0 left-0 right-0 md:top-0 md:bottom-0 md:w-20 lg:w-64 bg-white dark:bg-zinc-900 border-t md:border-t-0 md:border-r border-black/5 dark:border-white/5 z-40 flex md:flex-col">
         <div className="hidden md:flex p-6 mb-4">
-          <div className="w-10 h-10 bg-black dark:bg-white rounded-xl flex items-center justify-center text-white dark:text-black font-black text-xl">L</div>
-          <span className="hidden lg:block ml-3 font-black text-xl tracking-tight">LendTrack</span>
+          <div className="w-10 h-10 bg-black dark:bg-white rounded-xl flex items-center justify-center text-white dark:text-black font-black text-xl">M</div>
+          <span className="hidden lg:block ml-3 font-black text-xl tracking-tight">Metrix</span>
         </div>
         
         <div className="flex flex-1 justify-around md:flex-col md:justify-start md:px-3 gap-1 py-2 md:py-0">
@@ -3511,7 +3532,7 @@ export default function App() {
           
           <section>
             <h4 className="font-bold text-black dark:text-white mb-1 uppercase tracking-wider">2. User Responsibility & Data Ownership</h4>
-            <p>LendTrack is a record-keeping utility. You retain full ownership and are solely responsible for the accuracy, legality, and validity of all data entered. You must ensure that your use of this tool complies with all local laws and regulations in your jurisdiction.</p>
+            <p>Metrix is a record-keeping utility. You retain full ownership and are solely responsible for the accuracy, legality, and validity of all data entered. You must ensure that your use of this tool complies with all local laws and regulations in your jurisdiction.</p>
           </section>
 
           <section>
