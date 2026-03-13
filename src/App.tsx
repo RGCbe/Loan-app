@@ -41,7 +41,11 @@ import {
   Gavel,
   Coins,
   CircleDollarSign,
-  LogOut
+  LogOut,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Borrower, Loan, Payment, Stats, User, ActivityLog, ChitGroup, ChitMember, ChitAuction, ChitPayment } from './types';
@@ -310,6 +314,10 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [pendingCount, setPendingCount] = useState(getQueue().length);
   const [showBulkChitPaymentModal, setShowBulkChitPaymentModal] = useState(false);
+  const [expandedLoanPayments, setExpandedLoanPayments] = useState<Record<number, Payment[]>>({});
+  const [expandedLoanId, setExpandedLoanId] = useState<number | null>(null);
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+  const [showEditPaymentModal, setShowEditPaymentModal] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [borrowerPage, setBorrowerPage] = useState(1);
@@ -783,6 +791,114 @@ export default function App() {
       showToast(err.error || 'Failed to record payment', 'error');
     }
     setIsSubmitting(false);
+  };
+
+  const toggleLoanPayments = async (loanId: number) => {
+    if (expandedLoanId === loanId) {
+      setExpandedLoanId(null);
+      return;
+    }
+    const res = await offlineFetch(`/api/loans/${loanId}/payments`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setExpandedLoanPayments(prev => ({ ...prev, [loanId]: data }));
+      setExpandedLoanId(loanId);
+    }
+  };
+
+  const handleEditPayment = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingPayment || isSubmitting) return;
+    setIsSubmitting(true);
+    const formData = new FormData(e.currentTarget);
+    const data = Object.fromEntries(formData.entries());
+
+    const res = await offlineFetch(`/api/payments/${editingPayment.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ amount: Number(data.amount), payment_date: data.payment_date, notes: data.notes })
+    });
+    trackQueue();
+
+    if (res.ok) {
+      setShowEditPaymentModal(false);
+      setEditingPayment(null);
+      fetchLoans();
+      fetchStats();
+      if (expandedLoanId) {
+        const pRes = await offlineFetch(`/api/loans/${expandedLoanId}/payments`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (pRes.ok) {
+          const pData = await pRes.json();
+          setExpandedLoanPayments(prev => ({ ...prev, [expandedLoanId]: pData }));
+        }
+      }
+      if (viewingBorrowerProfile) fetchBorrowerLoans(viewingBorrowerProfile.id);
+      showToast('Payment updated successfully');
+    } else {
+      const err = await res.json().catch(() => ({ error: 'Failed' }));
+      showToast(err.error || 'Failed to update payment', 'error');
+    }
+    setIsSubmitting(false);
+  };
+
+  const handleDeletePayment = async (paymentId: number, loanId: number) => {
+    if (!confirm('Delete this payment entry?')) return;
+    const res = await offlineFetch(`/api/payments/${paymentId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    trackQueue();
+
+    if (res.ok) {
+      fetchLoans();
+      fetchStats();
+      // Refresh expanded payments
+      const paymentsRes = await offlineFetch(`/api/loans/${loanId}/payments`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (paymentsRes.ok) {
+        const data = await paymentsRes.json();
+        setExpandedLoanPayments(prev => ({ ...prev, [loanId]: data }));
+      }
+      if (viewingBorrowerProfile) fetchBorrowerLoans(viewingBorrowerProfile.id);
+      showToast('Payment deleted');
+    } else {
+      showToast('Failed to delete payment', 'error');
+    }
+  };
+
+  const handleGenerateInterest = async (loanId: number) => {
+    if (!confirm('Auto-generate past interest payment entries? This will create entries for each period from the loan start date to today.')) return;
+    const res = await offlineFetch(`/api/loans/${loanId}/generate-interest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+    });
+    trackQueue();
+
+    if (res.ok) {
+      const data = await res.json();
+      showToast(`Generated ${data.generated} interest entries`);
+      fetchLoans();
+      fetchStats();
+      // Refresh expanded payments if this loan is expanded
+      if (expandedLoanId === loanId) {
+        const paymentsRes = await offlineFetch(`/api/loans/${loanId}/payments`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (paymentsRes.ok) {
+          const pData = await paymentsRes.json();
+          setExpandedLoanPayments(prev => ({ ...prev, [loanId]: pData }));
+        }
+      }
+      if (viewingBorrowerProfile) fetchBorrowerLoans(viewingBorrowerProfile.id);
+    } else {
+      const err = await res.json().catch(() => ({ error: 'Failed' }));
+      showToast(err.error || 'Failed to generate interest entries', 'error');
+    }
   };
 
   const handleEditLoan = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -3722,8 +3838,21 @@ export default function App() {
       </Modal>
 
       <Modal
-        isOpen={showCapitalModal} 
-        onClose={() => setShowCapitalModal(false)} 
+        isOpen={showEditPaymentModal}
+        onClose={() => { setShowEditPaymentModal(false); setEditingPayment(null); }}
+        title={`Edit Payment #${editingPayment?.id}`}
+      >
+        <form onSubmit={handleEditPayment} className="space-y-4">
+          <Input label={`Amount (${user?.currency || '₹'})`} name="amount" type="number" required defaultValue={editingPayment?.amount} />
+          <Input label="Payment Date" name="payment_date" type="date" required defaultValue={editingPayment?.payment_date} />
+          <Input label="Notes" name="notes" placeholder="Notes" defaultValue={editingPayment?.notes} />
+          <Button type="submit" className="w-full py-3" disabled={isSubmitting}>{isSubmitting ? 'Updating...' : 'Update Payment'}</Button>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={showCapitalModal}
+        onClose={() => setShowCapitalModal(false)}
         title="Update Total Capital"
       >
         <form onSubmit={handleUpdateCapital} className="space-y-4">
@@ -4068,8 +4197,65 @@ export default function App() {
                             </Button>
                           )}
                         </div>
+                        {loan.status === 'Active' && loan.loan_type === 'Interest Only' && new Date(loan.start_date) < new Date() && (
+                          <button
+                            onClick={() => handleGenerateInterest(loan.id)}
+                            className="w-full mt-2 py-2 rounded-xl border border-indigo-500/20 bg-indigo-500/5 hover:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 transition-all"
+                          >
+                            <RefreshCw size={12} /> Auto-Generate Past Interest Entries
+                          </button>
+                        )}
+                        <button
+                          onClick={() => toggleLoanPayments(loan.id)}
+                          className="w-full mt-2 py-2 rounded-xl border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 transition-all"
+                        >
+                          <Clock size={12} /> Payment History {expandedLoanId === loan.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                        </button>
+                        <AnimatePresence>
+                          {expandedLoanId === loan.id && expandedLoanPayments[loan.id] && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="mt-3 space-y-2">
+                                {expandedLoanPayments[loan.id].length === 0 ? (
+                                  <p className="text-xs text-black/40 dark:text-white/30 text-center py-3">No payments recorded yet</p>
+                                ) : (
+                                  expandedLoanPayments[loan.id].map(payment => (
+                                    <div key={payment.id} className="flex items-center justify-between p-3 bg-black/5 dark:bg-white/5 rounded-xl text-xs">
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-bold text-emerald-600 dark:text-emerald-400">{user?.currency || '₹'}{payment.amount.toLocaleString()}</span>
+                                          <span className="text-black/30 dark:text-white/20">•</span>
+                                          <span className="text-black/50 dark:text-white/40">{new Date(payment.payment_date).toLocaleDateString()}</span>
+                                        </div>
+                                        {payment.notes && <p className="text-[10px] text-black/40 dark:text-white/30 mt-0.5">{payment.notes}</p>}
+                                      </div>
+                                      <div className="flex gap-1 ml-2">
+                                        <button
+                                          onClick={() => { setEditingPayment(payment); setShowEditPaymentModal(true); }}
+                                          className="p-1.5 hover:bg-black/10 dark:hover:bg-white/10 rounded-lg transition-all"
+                                        >
+                                          <Edit2 size={12} />
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeletePayment(payment.id, loan.id)}
+                                          className="p-1.5 hover:bg-red-100 dark:hover:bg-red-500/20 text-red-500 rounded-lg transition-all"
+                                        >
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                         {loan.status === 'Active' && (
-                          <button 
+                          <button
                             onClick={() => sendWhatsAppReminder(viewingBorrowerProfile, loan)}
                             className="w-full mt-2 py-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 transition-all"
                           >

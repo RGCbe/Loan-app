@@ -935,6 +935,97 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     res.json({ id: info.lastInsertRowid });
   });
 
+  // Update a payment
+  app.put("/api/payments/:id", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const payment = db.prepare("SELECT * FROM payments WHERE id = ? AND user_id = ?").get(req.params.id, userId) as any;
+    if (!payment) return res.status(404).json({ error: "Payment not found." });
+
+    const amount = req.body.amount ?? payment.amount;
+    const payment_date = req.body.payment_date ?? payment.payment_date;
+    const notes = req.body.notes ?? payment.notes;
+
+    if (amount <= 0) return res.status(400).json({ error: "Amount must be positive." });
+
+    db.prepare("UPDATE payments SET amount = ?, payment_date = ?, notes = ? WHERE id = ? AND user_id = ?")
+      .run(amount, payment_date, notes, req.params.id, userId);
+    logActivity(userId, "Edit Payment", `Updated payment ID: ${req.params.id}`);
+    res.json({ success: true });
+  });
+
+  // Delete a payment
+  app.delete("/api/payments/:id", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const payment = db.prepare("SELECT * FROM payments WHERE id = ? AND user_id = ?").get(req.params.id, userId) as any;
+    if (!payment) return res.status(404).json({ error: "Payment not found." });
+
+    db.prepare("DELETE FROM payments WHERE id = ? AND user_id = ?").run(req.params.id, userId);
+    logActivity(userId, "Delete Payment", `Deleted payment ID: ${req.params.id} (Amount: ${payment.amount})`);
+    res.json({ success: true });
+  });
+
+  // Auto-generate past interest entries for Interest Only loans
+  app.post("/api/loans/:id/generate-interest", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const loan = db.prepare("SELECT * FROM loans WHERE id = ? AND user_id = ?").get(req.params.id, userId) as any;
+    if (!loan) return res.status(404).json({ error: "Loan not found." });
+    if (loan.loan_type !== 'Interest Only') return res.status(400).json({ error: "Only Interest Only loans support this." });
+
+    const startDate = new Date(loan.start_date);
+    const now = new Date();
+    if (startDate >= now) return res.status(400).json({ error: "Loan start date is not in the past." });
+
+    // Calculate the interest amount per period
+    const interestAmount = loan.amount * (loan.interest_rate / 100);
+
+    // Get existing payments to avoid duplicates
+    const existingPayments = db.prepare("SELECT payment_date FROM payments WHERE loan_id = ? AND user_id = ?").all(loan.id, userId) as any[];
+    const existingDates = new Set(existingPayments.map((p: any) => p.payment_date));
+
+    const generated: string[] = [];
+
+    if (loan.interest_type === 'Monthly') {
+      const current = new Date(startDate);
+      current.setMonth(current.getMonth() + 1); // First interest due one period after start
+      while (current <= now) {
+        const dateStr = current.toISOString().split('T')[0];
+        if (!existingDates.has(dateStr)) {
+          db.prepare("INSERT INTO payments (user_id, loan_id, amount, payment_date, notes) VALUES (?, ?, ?, ?, ?)")
+            .run(userId, loan.id, interestAmount, dateStr, 'Auto-generated monthly interest');
+          generated.push(dateStr);
+        }
+        current.setMonth(current.getMonth() + 1);
+      }
+    } else if (loan.interest_type === 'Weekly') {
+      const current = new Date(startDate);
+      current.setDate(current.getDate() + 7);
+      while (current <= now) {
+        const dateStr = current.toISOString().split('T')[0];
+        if (!existingDates.has(dateStr)) {
+          db.prepare("INSERT INTO payments (user_id, loan_id, amount, payment_date, notes) VALUES (?, ?, ?, ?, ?)")
+            .run(userId, loan.id, interestAmount, dateStr, 'Auto-generated weekly interest');
+          generated.push(dateStr);
+        }
+        current.setDate(current.getDate() + 7);
+      }
+    } else if (loan.interest_type === 'Daily') {
+      const current = new Date(startDate);
+      current.setDate(current.getDate() + 1);
+      while (current <= now) {
+        const dateStr = current.toISOString().split('T')[0];
+        if (!existingDates.has(dateStr)) {
+          db.prepare("INSERT INTO payments (user_id, loan_id, amount, payment_date, notes) VALUES (?, ?, ?, ?, ?)")
+            .run(userId, loan.id, interestAmount, dateStr, 'Auto-generated daily interest');
+          generated.push(dateStr);
+        }
+        current.setDate(current.getDate() + 1);
+      }
+    }
+
+    logActivity(userId, "Generate Interest", `Generated ${generated.length} interest entries for loan ID: ${loan.id}`);
+    res.json({ success: true, generated: generated.length });
+  });
+
   app.post("/api/payments/bulk", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
     const { payments, payment_date, notes } = req.body; // payments: [{ loan_id, amount }]
