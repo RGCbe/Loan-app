@@ -72,6 +72,9 @@ export interface ChitGroup {
   commission_percent: number;
   start_date: string;
   status: 'Active' | 'Completed';
+  role: 'organizer' | 'member';
+  organizer_name?: string;
+  my_slot_number?: number;
   created_at: string;
 }
 
@@ -84,6 +87,9 @@ export interface ChitMember {
   slot_number: number;
   has_won_auction: number;
   auction_won_month?: number;
+  joint_with?: string;
+  my_share: number;
+  partner_share: number;
   created_at: string;
 }
 

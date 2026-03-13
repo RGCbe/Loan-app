@@ -1060,12 +1060,12 @@ export default function App() {
     }
   };
 
-  const handleAddChitMember = async (borrowerId: number, slotNumber: number) => {
+  const handleAddChitMember = async (borrowerId: number, slotNumber: number, jointWith?: string, myShare?: number, partnerShare?: number) => {
     if (!selectedChitGroup) return;
     const res = await offlineFetch(`/api/chit-groups/${selectedChitGroup.id}/members`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ borrower_id: borrowerId, slot_number: slotNumber })
+      body: JSON.stringify({ borrower_id: borrowerId, slot_number: slotNumber, joint_with: jointWith, my_share: myShare, partner_share: partnerShare })
     });
     trackQueue();
     if (res.ok) {
@@ -1547,7 +1547,7 @@ export default function App() {
             <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
               <h2 className="text-2xl font-black">Chit Fund Groups</h2>
               <Button onClick={() => setShowChitGroupModal(true)} className="w-full md:w-auto">
-                <Plus size={20} /> Create New Group
+                <Plus size={20} /> Add Group
               </Button>
             </div>
           </FadeIn>
@@ -1556,43 +1556,94 @@ export default function App() {
             <Card className="p-12 text-center" noHover>
               <UsersRound size={48} className="mx-auto text-black/10 dark:text-white/10 mb-4" />
               <h3 className="text-lg font-bold mb-1">No chit groups yet</h3>
-              <p className="text-sm text-black/40 dark:text-white/30 mb-4">Create your first chit fund group to get started.</p>
-              <Button onClick={() => setShowChitGroupModal(true)}><Plus size={16} /> Create Group</Button>
+              <p className="text-sm text-black/40 dark:text-white/30 mb-4">Create a group you organize or add one you've joined.</p>
+              <Button onClick={() => setShowChitGroupModal(true)}><Plus size={16} /> Add Group</Button>
             </Card>
           ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {chitGroups.map(group => (
-              <Card key={group.id} className="p-6 hover:border-indigo-500/30 transition-all group cursor-pointer" onClick={() => {
-                setSelectedChitGroup(group);
-                setSelectedChitMemberIds([]);
-                fetchChitMembers(group.id);
-                fetchChitAuctions(group.id);
-                fetchChitPayments(group.id);
-              }}>
-                <div className="flex justify-between items-start mb-4">
-                  <div className="p-3 bg-indigo-500/10 rounded-2xl text-indigo-500">
-                    <UsersRound size={24} />
-                  </div>
-                  <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${group.status === 'Active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-black/5 text-black/40'}`}>
-                    {group.status}
-                  </span>
+          <>
+            {chitGroups.filter(g => g.role === 'organizer' || !g.role).length > 0 && (
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-widest text-black/40 dark:text-white/30 mb-3">My Groups (Organizer)</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {chitGroups.filter(g => g.role === 'organizer' || !g.role).map(group => (
+                    <Card key={group.id} className="p-6 hover:border-indigo-500/30 transition-all group cursor-pointer" onClick={() => {
+                      setSelectedChitGroup(group);
+                      setSelectedChitMemberIds([]);
+                      fetchChitMembers(group.id);
+                      fetchChitAuctions(group.id);
+                      fetchChitPayments(group.id);
+                    }}>
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="p-3 bg-indigo-500/10 rounded-2xl text-indigo-500">
+                          <UsersRound size={24} />
+                        </div>
+                        <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${group.status === 'Active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-black/5 text-black/40'}`}>
+                          {group.status}
+                        </span>
+                      </div>
+                      <h3 className="text-xl font-bold mb-1">{group.name}</h3>
+                      <p className="text-sm text-black/40 dark:text-white/30 mb-4">Value: {user?.currency || '₹'}{group.total_value.toLocaleString()}</p>
+                      <div className="grid grid-cols-2 gap-4 pt-4 border-t border-black/5 dark:border-white/5">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase text-black/40 dark:text-white/30">Members</p>
+                          <p className="font-bold">{group.members_count}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase text-black/40 dark:text-white/30">Monthly</p>
+                          <p className="font-bold">{user?.currency || '₹'}{group.monthly_contribution.toLocaleString()}</p>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
                 </div>
-                <h3 className="text-xl font-bold mb-1">{group.name}</h3>
-                <p className="text-sm text-black/40 dark:text-white/30 mb-4">Value: {user?.currency || '₹'}{group.total_value.toLocaleString()}</p>
-                
-                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-black/5 dark:border-white/5">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase text-black/40 dark:text-white/30">Members</p>
-                    <p className="font-bold">{group.members_count}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase text-black/40 dark:text-white/30">Monthly</p>
-                    <p className="font-bold">{user?.currency || '₹'}{group.monthly_contribution.toLocaleString()}</p>
-                  </div>
+              </div>
+            )}
+            {chitGroups.filter(g => g.role === 'member').length > 0 && (
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-widest text-indigo-500 mb-3">Joined Groups (Member)</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {chitGroups.filter(g => g.role === 'member').map(group => (
+                    <Card key={group.id} className="p-6 hover:border-indigo-500/30 transition-all group cursor-pointer border-indigo-500/10" onClick={() => {
+                      setSelectedChitGroup(group);
+                      setSelectedChitMemberIds([]);
+                      fetchChitMembers(group.id);
+                      fetchChitAuctions(group.id);
+                      fetchChitPayments(group.id);
+                    }}>
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="p-3 bg-indigo-500/10 rounded-2xl text-indigo-500">
+                          <UsersRound size={24} />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-lg bg-indigo-500/10 text-indigo-500">Joined</span>
+                          <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${group.status === 'Active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-black/5 text-black/40'}`}>
+                            {group.status}
+                          </span>
+                        </div>
+                      </div>
+                      <h3 className="text-xl font-bold mb-1">{group.name}</h3>
+                      {group.organizer_name && <p className="text-xs text-indigo-500/60 mb-1">Organized by {group.organizer_name}</p>}
+                      <p className="text-sm text-black/40 dark:text-white/30 mb-4">Value: {user?.currency || '₹'}{group.total_value.toLocaleString()}</p>
+                      <div className="grid grid-cols-3 gap-4 pt-4 border-t border-black/5 dark:border-white/5">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase text-black/40 dark:text-white/30">Members</p>
+                          <p className="font-bold">{group.members_count}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase text-black/40 dark:text-white/30">Monthly</p>
+                          <p className="font-bold">{user?.currency || '₹'}{group.monthly_contribution.toLocaleString()}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase text-black/40 dark:text-white/30">My Slot</p>
+                          <p className="font-bold">#{group.my_slot_number || '-'}</p>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
                 </div>
-              </Card>
-            ))}
-          </div>
+              </div>
+            )}
+          </>
           )}
         </>
       ) : (
@@ -1681,9 +1732,19 @@ export default function App() {
                         <div>
                           <p className="font-bold">{member.borrower_name}</p>
                           <p className="text-xs text-black/40 dark:text-white/30">{member.phone}</p>
+                          {member.joint_with && (
+                            <p className="text-[10px] text-indigo-500 font-medium mt-0.5">
+                              Joint with {member.joint_with} ({user?.currency || '₹'}{member.my_share?.toLocaleString()} + {user?.currency || '₹'}{member.partner_share?.toLocaleString()})
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
+                        {member.joint_with && (
+                          <span className="text-[10px] font-bold uppercase px-2 py-1 bg-indigo-500/10 text-indigo-500 rounded-lg">
+                            Joint
+                          </span>
+                        )}
                         {member.has_won_auction === 1 ? (
                           <span className="text-[10px] font-bold uppercase px-2 py-1 bg-emerald-500/10 text-emerald-500 rounded-lg">
                             Won Month {member.auction_won_month}
@@ -2340,27 +2401,68 @@ export default function App() {
       duration_months: 10,
       monthly_contribution: 10000,
       commission_percent: 5,
-      start_date: new Date().toISOString().split('T')[0]
+      start_date: new Date().toISOString().split('T')[0],
+      role: 'organizer' as 'organizer' | 'member',
+      organizer_name: '',
+      my_slot_number: 1
     });
 
     return (
-      <Modal isOpen={isOpen} onClose={onClose} title="Create Chit Group">
+      <Modal isOpen={isOpen} onClose={onClose} title={formData.role === 'organizer' ? 'Create Chit Group' : 'Join Chit Group'}>
         <div className="space-y-4">
+          <div className="flex bg-black/5 dark:bg-white/5 rounded-xl p-1 gap-1">
+            <button
+              onClick={() => setFormData({ ...formData, role: 'organizer' })}
+              className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${formData.role === 'organizer' ? 'bg-black dark:bg-white text-white dark:text-black shadow-sm' : 'text-black/40 dark:text-white/40'}`}
+            >
+              I Organize
+            </button>
+            <button
+              onClick={() => setFormData({ ...formData, role: 'member' })}
+              className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${formData.role === 'member' ? 'bg-indigo-500 text-white shadow-sm' : 'text-black/40 dark:text-white/40'}`}
+            >
+              I Joined
+            </button>
+          </div>
           <div>
             <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Group Name</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
               value={formData.name}
               onChange={e => setFormData({ ...formData, name: e.target.value })}
               placeholder="e.g. Monthly Savings Group A"
             />
           </div>
+          {formData.role === 'member' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Organizer Name</label>
+                <input
+                  type="text"
+                  className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                  value={formData.organizer_name}
+                  onChange={e => setFormData({ ...formData, organizer_name: e.target.value })}
+                  placeholder="Who runs it?"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">My Slot #</label>
+                <input
+                  type="number"
+                  className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                  value={formData.my_slot_number}
+                  onChange={e => setFormData({ ...formData, my_slot_number: Number(e.target.value) })}
+                  min={1}
+                />
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Total Value</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
                 value={formData.total_value}
                 onChange={e => {
@@ -2371,8 +2473,8 @@ export default function App() {
             </div>
             <div>
               <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Duration (Months)</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
                 value={formData.duration_months}
                 onChange={e => {
@@ -2385,8 +2487,8 @@ export default function App() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Monthly Sub</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 bg-black/5"
                 value={formData.monthly_contribution}
                 readOnly
@@ -2394,8 +2496,8 @@ export default function App() {
             </div>
             <div>
               <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Commission %</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
                 value={formData.commission_percent}
                 onChange={e => setFormData({ ...formData, commission_percent: Number(e.target.value) })}
@@ -2404,29 +2506,35 @@ export default function App() {
           </div>
           <div>
             <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Start Date</label>
-            <input 
-              type="date" 
+            <input
+              type="date"
               className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
               value={formData.start_date}
               onChange={e => setFormData({ ...formData, start_date: e.target.value })}
             />
           </div>
-          <Button className="w-full py-4" onClick={() => onCreate(formData)}>Create Group</Button>
+          <Button className="w-full py-4" onClick={() => onCreate(formData)}>
+            {formData.role === 'organizer' ? 'Create Group' : 'Add Joined Group'}
+          </Button>
         </div>
       </Modal>
     );
   };
 
-  const AddMemberModal = ({ isOpen, onClose, onAdd, borrowers }: { isOpen: boolean, onClose: () => void, onAdd: (bid: number, slot: number) => void, borrowers: Borrower[] }) => {
+  const AddMemberModal = ({ isOpen, onClose, onAdd, borrowers }: { isOpen: boolean, onClose: () => void, onAdd: (bid: number, slot: number, jointWith?: string, myShare?: number, partnerShare?: number) => void, borrowers: Borrower[] }) => {
     const [selectedBorrowerId, setSelectedBorrowerId] = useState<number>(0);
     const [slotNumber, setSlotNumber] = useState(1);
+    const [isJoint, setIsJoint] = useState(false);
+    const [jointWith, setJointWith] = useState('');
+    const [myShare, setMyShare] = useState(0);
+    const [partnerShare, setPartnerShare] = useState(0);
 
     return (
       <Modal isOpen={isOpen} onClose={onClose} title="Add Member to Group">
         <div className="space-y-4">
           <div>
             <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Select Borrower</label>
-            <select 
+            <select
               className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
               value={selectedBorrowerId}
               onChange={e => setSelectedBorrowerId(Number(e.target.value))}
@@ -2439,14 +2547,58 @@ export default function App() {
           </div>
           <div>
             <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Slot Number</label>
-            <input 
-              type="number" 
+            <input
+              type="number"
               className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
               value={slotNumber}
               onChange={e => setSlotNumber(Number(e.target.value))}
             />
           </div>
-          <Button className="w-full py-4" onClick={() => onAdd(selectedBorrowerId, slotNumber)} disabled={!selectedBorrowerId}>
+          <div className="flex items-center gap-3 p-3 rounded-xl bg-black/5 dark:bg-white/5">
+            <input
+              type="checkbox"
+              id="joint-check"
+              checked={isJoint}
+              onChange={e => setIsJoint(e.target.checked)}
+              className="w-4 h-4 rounded"
+            />
+            <label htmlFor="joint-check" className="text-sm font-medium">Joint Borrower (split with partner)</label>
+          </div>
+          {isJoint && (
+            <div className="space-y-3 p-4 rounded-xl border border-indigo-500/20 bg-indigo-500/5">
+              <div>
+                <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Partner Name</label>
+                <input
+                  type="text"
+                  className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                  value={jointWith}
+                  onChange={e => setJointWith(e.target.value)}
+                  placeholder="Name of joint partner"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">My Share ({user?.currency || '₹'})</label>
+                  <input
+                    type="number"
+                    className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                    value={myShare}
+                    onChange={e => setMyShare(Number(e.target.value))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase text-black/40 dark:text-white/30 mb-1 block">Partner Share ({user?.currency || '₹'})</label>
+                  <input
+                    type="number"
+                    className="w-full p-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900"
+                    value={partnerShare}
+                    onChange={e => setPartnerShare(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+          <Button className="w-full py-4" onClick={() => onAdd(selectedBorrowerId, slotNumber, isJoint ? jointWith : undefined, isJoint ? myShare : undefined, isJoint ? partnerShare : undefined)} disabled={!selectedBorrowerId}>
             Add Member
           </Button>
         </div>
@@ -3032,8 +3184,8 @@ export default function App() {
 
       {/* Main Content */}
       <main className="pb-24 md:pb-8 md:pl-20 lg:pl-64 min-h-screen">
-        <header className="sticky top-0 bg-[#F8F9FA]/80 dark:bg-zinc-950/80 backdrop-blur-md z-30 px-8 py-4 flex justify-between items-center border-b border-black/5 dark:border-white/5">
-          <h1 className="text-2xl font-black tracking-tight capitalize">{activeTab}</h1>
+        <header className="sticky top-0 bg-[#F8F9FA]/80 dark:bg-zinc-950/80 backdrop-blur-md z-30 px-4 md:px-8 py-3 md:py-4 flex justify-between items-center border-b border-black/5 dark:border-white/5">
+          <h1 className="text-xl md:text-2xl font-black tracking-tight capitalize">{activeTab}</h1>
           <div className="flex items-center gap-3">
             <div className="flex items-center bg-black/5 dark:bg-white/5 p-1 rounded-full border border-black/5 dark:border-white/5">
               {user?.pin_enabled === 1 && (
@@ -3143,7 +3295,7 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        <div className="p-6 max-w-7xl mx-auto">
+        <div className="p-4 md:p-6 max-w-7xl mx-auto">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}

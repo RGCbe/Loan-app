@@ -5,7 +5,9 @@ const config: CapacitorConfig = {
   appName: 'Metrix',
   webDir: 'dist',
   server: {
-    androidScheme: 'https'
+    androidScheme: 'https',
+    url: 'https://me-trix.in',
+    cleartext: false
   }
 };
 

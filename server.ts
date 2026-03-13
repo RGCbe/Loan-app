@@ -237,6 +237,26 @@ try {
   // If capital doesn't exist at all, the main exec above handles it
 }
 
+// Chit fund schema migrations
+try {
+  db.exec("ALTER TABLE chit_groups ADD COLUMN role TEXT DEFAULT 'organizer'");
+} catch (e) { }
+try {
+  db.exec("ALTER TABLE chit_groups ADD COLUMN organizer_name TEXT");
+} catch (e) { }
+try {
+  db.exec("ALTER TABLE chit_groups ADD COLUMN my_slot_number INTEGER");
+} catch (e) { }
+try {
+  db.exec("ALTER TABLE chit_members ADD COLUMN joint_with TEXT");
+} catch (e) { }
+try {
+  db.exec("ALTER TABLE chit_members ADD COLUMN my_share REAL DEFAULT 0");
+} catch (e) { }
+try {
+  db.exec("ALTER TABLE chit_members ADD COLUMN partner_share REAL DEFAULT 0");
+} catch (e) { }
+
 // Seed default data if empty (only if we have at least one user)
 const userResult = db.prepare("SELECT id FROM users LIMIT 1").get() as any;
 if (userResult) {
@@ -983,7 +1003,7 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
   app.post("/api/chit-groups", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
-    const { name, total_value, members_count, duration_months, monthly_contribution, commission_percent, start_date } = req.body;
+    const { name, total_value, members_count, duration_months, monthly_contribution, commission_percent, start_date, role, organizer_name, my_slot_number } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: "Group name is required." });
     if (!total_value || total_value <= 0) return res.status(400).json({ error: "Total value must be positive." });
     if (!members_count || members_count < 2) return res.status(400).json({ error: "Must have at least 2 members." });
@@ -991,10 +1011,10 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     if (!monthly_contribution || monthly_contribution <= 0) return res.status(400).json({ error: "Monthly contribution must be positive." });
     if (!start_date) return res.status(400).json({ error: "Start date is required." });
     const info = db.prepare(`
-      INSERT INTO chit_groups (user_id, name, total_value, members_count, duration_months, monthly_contribution, commission_percent, start_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(userId, name, total_value, members_count, duration_months, monthly_contribution, commission_percent, start_date);
-    logActivity(userId, "Create Chit Group", `Created chit group: ${name}`);
+      INSERT INTO chit_groups (user_id, name, total_value, members_count, duration_months, monthly_contribution, commission_percent, start_date, role, organizer_name, my_slot_number)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, name, total_value, members_count, duration_months, monthly_contribution, commission_percent, start_date, role || 'organizer', organizer_name || null, my_slot_number || null);
+    logActivity(userId, "Create Chit Group", `Created chit group: ${name} (${role || 'organizer'})`);
     res.json({ id: info.lastInsertRowid });
   });
 
@@ -1016,15 +1036,15 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     if (isNaN(groupId)) return res.status(400).json({ error: "Invalid group ID" });
     const group = db.prepare("SELECT id FROM chit_groups WHERE id = ? AND user_id = ?").get(groupId, userId);
     if (!group) return res.status(404).json({ error: "Chit group not found" });
-    const { borrower_id, slot_number } = req.body;
+    const { borrower_id, slot_number, joint_with, my_share, partner_share } = req.body;
     if (!borrower_id || !slot_number) return res.status(400).json({ error: "Borrower and slot number are required" });
     const borrower = db.prepare("SELECT id FROM borrowers WHERE id = ? AND user_id = ?").get(borrower_id, userId);
     if (!borrower) return res.status(404).json({ error: "Borrower not found" });
     const info = db.prepare(`
-      INSERT INTO chit_members (user_id, chit_group_id, borrower_id, slot_number)
-      VALUES (?, ?, ?, ?)
-    `).run(userId, groupId, borrower_id, slot_number);
-    logActivity(userId, "Add Chit Member", `Added member to chit group ID: ${groupId}`);
+      INSERT INTO chit_members (user_id, chit_group_id, borrower_id, slot_number, joint_with, my_share, partner_share)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, groupId, borrower_id, slot_number, joint_with || null, my_share || 0, partner_share || 0);
+    logActivity(userId, "Add Chit Member", `Added member to chit group ID: ${groupId}${joint_with ? ' (joint with ' + joint_with + ')' : ''}`);
     res.json({ id: info.lastInsertRowid });
   });
 
