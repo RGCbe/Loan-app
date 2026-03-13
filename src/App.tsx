@@ -1185,6 +1185,27 @@ export default function App() {
         }}
         className="space-y-6"
       >
+        {isInstallable && (
+          <FadeIn direction="down">
+            <Card className="p-4 bg-gradient-to-r from-black to-zinc-800 dark:from-white dark:to-zinc-200 border-0 relative overflow-hidden mb-2">
+              <div className="flex items-center justify-between relative z-10">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-white/10 dark:bg-black/10 rounded-xl">
+                    <Download size={20} className="text-white dark:text-black" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-white dark:text-black">Install Metrix App</h4>
+                    <p className="text-[11px] text-white/60 dark:text-black/50">Add to home screen for the best experience</p>
+                  </div>
+                </div>
+                <button onClick={handleInstallApp} className="px-4 py-2 bg-white dark:bg-black text-black dark:text-white rounded-xl text-xs font-bold hover:scale-105 transition-transform cursor-pointer">
+                  Install
+                </button>
+              </div>
+            </Card>
+          </FadeIn>
+        )}
+
         <AdComponent isPremium={user?.is_premium === 1} onUpgrade={handleUpgrade} />
         
         <PricingModal
