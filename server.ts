@@ -202,6 +202,12 @@ try {
   db.exec("ALTER TABLE users ADD COLUMN recovery_answer TEXT");
 } catch (e) { }
 try {
+  db.exec("ALTER TABLE users ADD COLUMN terms_accepted INTEGER DEFAULT 0");
+} catch (e) { }
+try {
+  db.exec("ALTER TABLE users ADD COLUMN currency TEXT DEFAULT '₹'");
+} catch (e) { }
+try {
   db.exec("ALTER TABLE borrowers ADD COLUMN user_id INTEGER DEFAULT 1");
 } catch (e) { }
 try {
