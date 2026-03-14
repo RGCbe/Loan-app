@@ -356,6 +356,7 @@ export default function App() {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [selectedBorrower, setSelectedBorrower] = useState<Borrower | null>(null);
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
   const [viewingBorrowerProfile, setViewingBorrowerProfile] = useState<Borrower | null>(null);
   const [showPricingModal, setShowPricingModal] = useState(false);
   const [showEditBorrowerModal, setShowEditBorrowerModal] = useState(false);
@@ -812,6 +813,15 @@ export default function App() {
 
     if (res.ok) {
       const result = await res.json();
+      // If new investment, add the given_amount to capital
+      if (data.fund_source === 'new_investment' && data.direction === 'Lent') {
+        const newCapital = (stats.investedCapital || 0) + Number(data.given_amount);
+        await offlineFetch('/api/capital', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ amount: newCapital })
+        });
+      }
       setShowLoanModal(false);
       fetchLoans();
       fetchStats();
@@ -1568,7 +1578,7 @@ export default function App() {
                   transition={{ delay: idx * 0.05 }}
                   viewport={{ once: true }}
                   className="flex items-center justify-between p-3 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-colors cursor-pointer" 
-                  onClick={() => { setSelectedLoan(loan); setShowPaymentModal(true); }}
+                  onClick={() => { setSelectedLoan(loan); setPaymentAmount(''); setShowPaymentModal(true); }}
                 >
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${loan.direction === 'Borrowed' ? 'bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400' : 'bg-black/5 dark:bg-white/5 text-black/40 dark:text-white/40'}`}>
@@ -2136,7 +2146,7 @@ export default function App() {
                         </Button>
                       )}
                       {loan.status === 'Active' && (
-                        <Button variant="ghost" className="text-xs p-2" onClick={() => { setSelectedLoan(loan); setShowPaymentModal(true); }}>
+                        <Button variant="ghost" className="text-xs p-2" onClick={() => { setSelectedLoan(loan); setPaymentAmount(''); setShowPaymentModal(true); }}>
                           Payment
                         </Button>
                       )}
@@ -3783,27 +3793,37 @@ export default function App() {
             ]} 
           />
           <div className="grid grid-cols-2 gap-4">
-            <Select 
-              label="Loan Direction" 
-              name="direction" 
-              required 
+            <Select
+              label="Loan Direction"
+              name="direction"
+              required
               defaultValue="Lent"
               options={[
                 { value: 'Lent', label: 'I am Lending' },
                 { value: 'Borrowed', label: 'I am Borrowing' }
-              ]} 
+              ]}
             />
-            <Select 
-              label="Loan Type" 
-              name="loan_type" 
-              required 
+            <Select
+              label="Loan Type"
+              name="loan_type"
+              required
               defaultValue="Interest Only"
               options={[
                 { value: 'Interest Only', label: 'Interest Only' },
                 { value: 'Installment', label: 'Installment Plan' }
-              ]} 
+              ]}
             />
           </div>
+          <Select
+            label="Fund Source"
+            name="fund_source"
+            required
+            defaultValue="from_capital"
+            options={[
+              { value: 'from_capital', label: `From Capital (Available: ${user?.currency || '₹'}${((stats.investedCapital || 0) - (stats.totalGiven || 0)).toLocaleString()})` },
+              { value: 'new_investment', label: 'New Investment (adds to capital)' }
+            ]}
+          />
           <div className="grid grid-cols-2 gap-4">
             <Select 
               label="Period Type" 
@@ -3900,32 +3920,69 @@ export default function App() {
         </form>
       </Modal>
 
-      <Modal 
-        isOpen={showPaymentModal} 
-        onClose={() => { setShowPaymentModal(false); setSelectedLoan(null); }} 
+      <Modal
+        isOpen={showPaymentModal}
+        onClose={() => { setShowPaymentModal(false); setSelectedLoan(null); setPaymentAmount(''); }}
         title={`Add Payment for Loan #${selectedLoan?.id}`}
       >
-        <form onSubmit={handleAddPayment} className="space-y-4">
-          <input type="hidden" name="loan_id" value={selectedLoan?.id} />
-          <div className="p-4 bg-black/5 rounded-2xl mb-4">
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-black/50">Remaining Principal:</span>
-              <span className="font-bold">{user?.currency || '₹'}{(selectedLoan?.currentPrincipal || 0).toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-black/50">Interest Accrued:</span>
-              <span className="font-bold text-emerald-600">+{user?.currency || '₹'}{(selectedLoan?.accruedInterest || 0).toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between text-sm mt-2 pt-2 border-t border-black/5">
-              <span className="text-black/50">Total Balance:</span>
-              <span className="font-bold">{user?.currency || '₹'}{(selectedLoan?.balance || 0).toLocaleString()}</span>
-            </div>
-          </div>
-          <Input label={`Payment Amount (${user?.currency || '₹'})`} name="amount" type="number" required placeholder="200" />
-          <Input label="Payment Date" name="payment_date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} />
-          <Input label="Notes" name="notes" placeholder="Cash payment" />
-          <Button type="submit" className="w-full py-3" disabled={isSubmitting}>{isSubmitting ? 'Recording...' : 'Record Payment'}</Button>
-        </form>
+        {(() => {
+          const periodInterest = selectedLoan ? Math.round(selectedLoan.amount * (selectedLoan.interest_rate / 100)) : 0;
+          const periodLabel = selectedLoan?.interest_type === 'Daily' ? 'Daily' : selectedLoan?.interest_type === 'Weekly' ? 'Weekly' : 'Monthly';
+          return (
+            <form onSubmit={handleAddPayment} className="space-y-4">
+              <input type="hidden" name="loan_id" value={selectedLoan?.id} />
+              <div className="p-4 bg-black/5 dark:bg-white/5 rounded-2xl mb-2 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-black/50 dark:text-white/40">Principal:</span>
+                  <span className="font-bold">{user?.currency || '₹'}{(selectedLoan?.currentPrincipal || 0).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-black/50 dark:text-white/40">Interest Rate:</span>
+                  <span className="font-bold">{selectedLoan?.interest_rate}% {periodLabel}</span>
+                </div>
+                {selectedLoan?.loan_type === 'Interest Only' && periodInterest > 0 && (
+                  <div className="flex justify-between text-sm pt-2 border-t border-black/10 dark:border-white/10">
+                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{periodLabel} Interest Due:</span>
+                    <span className="font-black text-emerald-600 dark:text-emerald-400">{user?.currency || '₹'}{periodInterest.toLocaleString()}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-sm pt-2 border-t border-black/10 dark:border-white/10">
+                  <span className="text-black/50 dark:text-white/40">Total Balance:</span>
+                  <span className="font-bold">{user?.currency || '₹'}{(selectedLoan?.balance || 0).toLocaleString()}</span>
+                </div>
+              </div>
+
+              {selectedLoan?.loan_type === 'Interest Only' && periodInterest > 0 && (
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setPaymentAmount(String(periodInterest))}
+                    className="flex-1 py-2 px-3 rounded-xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs font-bold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-all">
+                    Interest Only ({user?.currency || '₹'}{periodInterest.toLocaleString()})
+                  </button>
+                  <button type="button" onClick={() => setPaymentAmount(String(Math.round(selectedLoan?.balance || 0)))}
+                    className="flex-1 py-2 px-3 rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 text-xs font-bold hover:bg-black/10 dark:hover:bg-white/10 transition-all">
+                    Full Balance ({user?.currency || '₹'}{Math.round(selectedLoan?.balance || 0).toLocaleString()})
+                  </button>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wider text-black/50 dark:text-white/40 ml-1">Payment Amount ({user?.currency || '₹'})</label>
+                <input
+                  name="amount"
+                  type="number"
+                  required
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  placeholder={periodInterest > 0 ? String(periodInterest) : "0"}
+                  className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 transition-all bg-white dark:bg-zinc-800 text-black dark:text-white text-lg font-bold"
+                />
+              </div>
+              <Input label="Payment Date" name="payment_date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} />
+              <Input label="Notes" name="notes" placeholder="Cash payment" defaultValue={selectedLoan?.loan_type === 'Interest Only' ? `${periodLabel} interest payment` : ''} />
+              <Button type="submit" className="w-full py-3" disabled={isSubmitting}>{isSubmitting ? 'Recording...' : 'Record Payment'}</Button>
+            </form>
+          );
+        })()}
       </Modal>
 
       <Modal
@@ -4283,7 +4340,7 @@ export default function App() {
                             <Edit2 size={14} /> Edit
                           </Button>
                           {loan.status === 'Active' && (
-                            <Button className="flex-1 text-xs" onClick={() => { setSelectedLoan(loan); setShowPaymentModal(true); }}>
+                            <Button className="flex-1 text-xs" onClick={() => { setSelectedLoan(loan); setPaymentAmount(''); setShowPaymentModal(true); }}>
                               Add Payment
                             </Button>
                           )}
