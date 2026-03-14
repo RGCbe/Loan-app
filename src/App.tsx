@@ -120,20 +120,75 @@ const PricingModal = ({ isOpen, onClose, onUpgrade }: { isOpen: boolean, onClose
 
 // --- Components ---
 
-const Card = ({ children, className = "", onClick, noHover = false }: { children: React.ReactNode, className?: string, key?: React.Key, onClick?: () => void, noHover?: boolean }) => {
+const Card = ({ children, className = "", onClick, noHover = false, glass = false }: { children: React.ReactNode, className?: string, key?: React.Key, onClick?: () => void, noHover?: boolean, glass?: boolean }) => {
   const hasCustomBg = className.includes('bg-');
-  
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (noHover || !ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    ref.current.style.transform = `perspective(800px) rotateY(${x * 6}deg) rotateX(${-y * 6}deg) translateY(-4px)`;
+  };
+
+  const handleMouseLeave = () => {
+    if (ref.current) ref.current.style.transform = 'perspective(800px) rotateY(0) rotateX(0) translateY(0)';
+  };
+
   return (
-    <motion.div 
+    <motion.div
+      ref={ref}
       initial={{ opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "0px" }}
-      whileHover={noHover ? {} : { y: -5, transition: { duration: 0.2 } }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
       onClick={onClick}
-      className={`rounded-2xl border border-black/5 dark:border-white/5 shadow-sm overflow-hidden ${!hasCustomBg ? 'bg-white dark:bg-zinc-900' : ''} ${className} ${onClick ? 'cursor-pointer' : ''}`}
+      style={{ transition: 'transform 0.2s ease-out', transformStyle: 'preserve-3d' }}
+      className={`rounded-2xl border shadow-sm overflow-hidden ${glass ? 'bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-white/20 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.08)]' : `border-black/5 dark:border-white/5 ${!hasCustomBg ? 'bg-white dark:bg-zinc-900' : ''}`} ${className} ${onClick ? 'cursor-pointer' : ''}`}
     >
       {children}
     </motion.div>
+  );
+};
+
+// Aurora Background Effect
+const AuroraBackground = () => (
+  <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+    <div className="absolute -top-1/4 -left-1/4 w-[150%] h-[150%] animate-[auroraRotate_20s_linear_infinite] opacity-30 dark:opacity-20"
+      style={{
+        background: 'conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(99,102,241,0.12) 60deg, transparent 120deg, rgba(236,72,153,0.08) 180deg, transparent 240deg, rgba(6,182,212,0.1) 300deg, transparent 360deg)',
+        filter: 'blur(80px)',
+      }}
+    />
+    <div className="absolute -top-1/4 -left-1/4 w-[150%] h-[150%] animate-[auroraRotate_15s_linear_infinite_reverse] opacity-20 dark:opacity-15"
+      style={{
+        background: 'conic-gradient(from 180deg at 50% 50%, transparent 0deg, rgba(139,92,246,0.1) 90deg, transparent 180deg, rgba(16,185,129,0.08) 270deg, transparent 360deg)',
+        filter: 'blur(100px)',
+      }}
+    />
+  </div>
+);
+
+// Animated Gradient Border Card
+const GlowCard = ({ children, className = "", color = 'indigo' }: { children: React.ReactNode, className?: string, color?: string }) => {
+  const gradients: Record<string, string> = {
+    indigo: 'from-indigo-500 via-purple-500 to-pink-500',
+    emerald: 'from-emerald-400 via-teal-500 to-cyan-500',
+    red: 'from-red-400 via-rose-500 to-pink-500',
+    gold: 'from-amber-400 via-yellow-500 to-orange-500',
+  };
+
+  return (
+    <div className="relative rounded-2xl p-[1px] overflow-hidden group">
+      <div className={`absolute inset-0 bg-gradient-to-r ${gradients[color] || gradients.indigo} opacity-0 group-hover:opacity-100 transition-opacity duration-500 animate-[spin_4s_linear_infinite]`}
+        style={{ backgroundSize: '200% 200%', animation: 'gradientShift 3s ease infinite' }}
+      />
+      <div className={`relative rounded-2xl bg-white dark:bg-zinc-900 ${className}`}>
+        {children}
+      </div>
+    </div>
   );
 };
 
@@ -759,10 +814,15 @@ export default function App() {
     trackQueue();
 
     if (res.ok) {
+      const result = await res.json();
       setShowLoanModal(false);
       fetchLoans();
       fetchStats();
-      showToast('Loan created successfully');
+      if (result.generatedPayments > 0) {
+        showToast(`Loan created with ${result.generatedPayments} auto-generated interest entries`);
+      } else {
+        showToast('Loan created successfully');
+      }
     } else {
       const err = await res.json().catch(() => ({ error: 'Failed to create loan' }));
       showToast(err.error || 'Failed to create loan', 'error');
@@ -1409,80 +1469,85 @@ export default function App() {
           }}
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
         >
-          <Card className="p-6 bg-black dark:bg-white text-white dark:text-black relative group cursor-pointer" onClick={() => setShowCapitalModal(true)}>
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-white/60 dark:text-black/60 text-[10px] font-bold uppercase tracking-widest">Total Capital</p>
-                <h2 className="text-2xl font-black mt-1">{user?.currency || '₹'}{(stats.investedCapital || 0).toLocaleString()}</h2>
+          <GlowCard color="gold" className="p-6">
+            <div className="relative group cursor-pointer" onClick={() => setShowCapitalModal(true)}>
+              <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 via-transparent to-purple-500/5 rounded-2xl" />
+              <div className="flex justify-between items-start relative">
+                <div>
+                  <p className="text-black/50 dark:text-white/40 text-[10px] font-bold uppercase tracking-widest">Total Capital</p>
+                  <h2 className="text-2xl font-black mt-1 bg-gradient-to-r from-amber-600 to-orange-500 bg-clip-text text-transparent">{user?.currency || '₹'}{(stats.investedCapital || 0).toLocaleString()}</h2>
+                </div>
+                <div className="p-2 bg-amber-500/10 rounded-lg group-hover:bg-amber-500/20 transition-colors">
+                  <TrendingUp size={20} className="text-amber-500" />
+                </div>
               </div>
-              <div className="p-2 bg-white/10 dark:bg-black/10 rounded-lg group-hover:bg-white/20 dark:group-hover:bg-black/20 transition-colors">
-                <TrendingUp size={20} />
+              <div className="mt-4 flex items-center gap-2 relative">
+                <div className="flex-1 h-1.5 bg-black/5 dark:bg-white/10 rounded-full overflow-hidden">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    whileInView={{ width: `${Math.min(utilization, 100)}%` }}
+                    transition={{ duration: 1.5, ease: "easeOut" }}
+                    className="h-full bg-gradient-to-r from-amber-400 to-orange-500 rounded-full"
+                  />
+                </div>
+                <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">{utilization.toFixed(1)}%</span>
+              </div>
+              <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Edit2 size={12} className="text-black/30 dark:text-white/30" />
               </div>
             </div>
-            <div className="mt-4 flex items-center gap-2">
-              <div className="flex-1 h-1 bg-white/10 dark:bg-black/10 rounded-full overflow-hidden">
-                <motion.div 
-                  initial={{ width: 0 }}
-                  whileInView={{ width: `${Math.min(utilization, 100)}%` }}
-                  transition={{ duration: 1, ease: "easeOut" }}
-                  className="h-full bg-emerald-400" 
-                />
-              </div>
-              <span className="text-[10px] font-bold">{utilization.toFixed(1)}% Used</span>
-            </div>
-            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-              <Edit2 size={12} />
-            </div>
-          </Card>
+          </GlowCard>
 
-          <Card className="p-6">
+          <Card glass className="p-6">
             <div className="flex justify-between items-start">
               <div>
                 <p className="text-black/50 dark:text-white/40 text-[10px] font-bold uppercase tracking-widest">Currently Lent</p>
-                <h2 className="text-2xl font-bold mt-1">{user?.currency || '₹'}{(stats.totalGiven || 0).toLocaleString()}</h2>
+                <h2 className="text-2xl font-bold mt-1 bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent">{user?.currency || '₹'}{(stats.totalGiven || 0).toLocaleString()}</h2>
               </div>
-              <div className="p-2 bg-black/5 dark:bg-white/5 rounded-lg">
-                <HandCoins size={20} />
+              <div className="p-2 bg-emerald-500/10 rounded-lg">
+                <HandCoins size={20} className="text-emerald-500" />
               </div>
             </div>
             <p className="mt-2 text-[10px] text-black/40 dark:text-white/30 font-medium">Available: {user?.currency || '₹'}{(remainingCapital || 0).toLocaleString()}</p>
           </Card>
 
-          <Card className="p-6">
+          <Card glass className="p-6">
             <div className="flex justify-between items-start">
               <div>
                 <p className="text-black/50 dark:text-white/40 text-[10px] font-bold uppercase tracking-widest">Total Collected</p>
-                <h2 className="text-2xl font-bold mt-1">{user?.currency || '₹'}{(stats.totalCollected || 0).toLocaleString()}</h2>
+                <h2 className="text-2xl font-bold mt-1 bg-gradient-to-r from-cyan-600 to-blue-500 bg-clip-text text-transparent">{user?.currency || '₹'}{(stats.totalCollected || 0).toLocaleString()}</h2>
               </div>
-              <div className="p-2 bg-emerald-50 dark:bg-emerald-500/10 rounded-lg">
-                <TrendingUp size={20} className="text-emerald-500" />
+              <div className="p-2 bg-cyan-500/10 rounded-lg">
+                <TrendingUp size={20} className="text-cyan-500" />
               </div>
             </div>
           </Card>
 
-          <Card className="p-6 bg-red-50 dark:bg-red-500/10 border-red-100 dark:border-red-500/20">
+          <GlowCard color="red" className="p-6">
             <div className="flex justify-between items-start">
               <div>
                 <p className="text-red-400 dark:text-red-300 text-[10px] font-bold uppercase tracking-widest">My Borrowings</p>
-                <h2 className="text-2xl font-bold mt-1 text-red-600 dark:text-red-400">{user?.currency || '₹'}{(stats.totalBorrowed || 0).toLocaleString()}</h2>
+                <h2 className="text-2xl font-bold mt-1 bg-gradient-to-r from-red-500 to-rose-500 bg-clip-text text-transparent">{user?.currency || '₹'}{(stats.totalBorrowed || 0).toLocaleString()}</h2>
               </div>
-              <div className="p-2 bg-red-100 dark:bg-red-500/20 rounded-lg">
+              <div className="p-2 bg-red-500/10 rounded-lg">
                 <AlertCircle size={20} className="text-red-500" />
               </div>
             </div>
-          </Card>
+          </GlowCard>
 
-          <Card className="p-6 bg-indigo-50 dark:bg-indigo-500/10 border-indigo-100 dark:border-indigo-500/20 cursor-pointer" onClick={() => setActiveTab('chitfunds')}>
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-indigo-400 dark:text-indigo-300 text-[10px] font-bold uppercase tracking-widest">Chit Groups</p>
-                <h2 className="text-2xl font-bold mt-1 text-indigo-600 dark:text-indigo-400">{chitGroups.length} Active</h2>
-              </div>
-              <div className="p-2 bg-indigo-100 dark:bg-indigo-500/20 rounded-lg">
-                <UsersRound size={20} className="text-indigo-500" />
+          <GlowCard color="indigo" className="p-6">
+            <div className="cursor-pointer" onClick={() => setActiveTab('chitfunds')}>
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-indigo-400 dark:text-indigo-300 text-[10px] font-bold uppercase tracking-widest">Chit Groups</p>
+                  <h2 className="text-2xl font-bold mt-1 bg-gradient-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent">{chitGroups.length} Active</h2>
+                </div>
+                <div className="p-2 bg-indigo-500/10 rounded-lg">
+                  <UsersRound size={20} className="text-indigo-500" />
+                </div>
               </div>
             </div>
-          </Card>
+          </GlowCard>
         </motion.div>
 
         <motion.div 
@@ -3305,9 +3370,10 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen noise-overlay css-particles">
+      <AuroraBackground />
       {/* Sidebar / Nav */}
-      <nav aria-label="Main navigation" className="fixed bottom-0 left-0 right-0 md:top-0 md:bottom-0 md:w-20 lg:w-64 bg-white dark:bg-zinc-900 border-t md:border-t-0 md:border-r border-black/5 dark:border-white/5 z-40 flex md:flex-col">
+      <nav aria-label="Main navigation" className="fixed bottom-0 left-0 right-0 md:top-0 md:bottom-0 md:w-20 lg:w-64 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-t md:border-t-0 md:border-r border-black/5 dark:border-white/5 z-40 flex md:flex-col">
         <div className="hidden md:flex p-6 mb-4">
           <div className="w-10 h-10 bg-black dark:bg-white rounded-xl flex items-center justify-center text-white dark:text-black font-black text-xl">M</div>
           <span className="hidden lg:block ml-3 font-black text-xl tracking-tight">Metrix</span>

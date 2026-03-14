@@ -264,7 +264,7 @@ if (userResult) {
   if (borrowerCount.count === 0) {
     db.prepare(`
       INSERT INTO borrowers (user_id, name, phone, address, notes) 
-      VALUES (?, 'Default Borrower', '9876543210', 'Main Street, India', 'Auto-generated default borrower')
+      VALUES (?, 'Default Contact', '9876543210', 'Main Street, India', 'Auto-generated default contact')
     `).run(userResult.id);
   }
 }
@@ -559,7 +559,7 @@ async function startServer() {
         ).run(userId, newLoanId, p.amount || 0, p.payment_date || new Date().toISOString().split('T')[0], p.notes || '');
       }
 
-      logActivity(userId, "Import Data", `Imported ${borrowers.length} borrowers, ${loans.length} loans, ${payments.length} payments`);
+      logActivity(userId, "Import Data", `Imported ${borrowers.length} contacts, ${loans.length} loans, ${payments.length} payments`);
     });
 
     try {
@@ -666,7 +666,7 @@ async function startServer() {
     `).all(userId) as any[];
 
     const csvRows = [
-      ["ID", "Borrower", "Amount", "Given Amount", "Interest Rate", "Type", "Status", "Start Date"].join(",")
+      ["ID", "Contact", "Amount", "Given Amount", "Interest Rate", "Type", "Status", "Start Date"].join(",")
     ];
 
     loans.forEach(loan => {
@@ -807,30 +807,30 @@ async function startServer() {
   app.post("/api/borrowers", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
     const { name, phone, address, notes } = req.body;
-    if (!name || !name.trim()) return res.status(400).json({ error: "Borrower name is required." });
+    if (!name || !name.trim()) return res.status(400).json({ error: "Contact name is required." });
     const info = db.prepare("INSERT INTO borrowers (user_id, name, phone, address, notes) VALUES (?, ?, ?, ?, ?)").run(userId, name.trim(), phone, address, notes);
-    logActivity(userId, "Add Borrower", `Added borrower: ${name}`);
+    logActivity(userId, "Add Contact", `Added contact: ${name}`);
     res.json({ id: info.lastInsertRowid });
   });
 
   app.put("/api/borrowers/:id", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
     const borrowerId = parseInt(req.params.id);
-    if (isNaN(borrowerId)) return res.status(400).json({ error: "Invalid borrower ID" });
+    if (isNaN(borrowerId)) return res.status(400).json({ error: "Invalid contact ID" });
     const { name, phone, address, notes } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: "Name is required" });
     const trimmedName = name.trim();
     const existing = db.prepare("SELECT id FROM borrowers WHERE id = ? AND user_id = ?").get(borrowerId, userId);
-    if (!existing) return res.status(404).json({ error: "Borrower not found" });
+    if (!existing) return res.status(404).json({ error: "Contact not found" });
     db.prepare("UPDATE borrowers SET name = ?, phone = ?, address = ?, notes = ? WHERE id = ? AND user_id = ?").run(trimmedName, phone || '', address || '', notes || '', borrowerId, userId);
-    logActivity(userId, "Update Borrower", `Updated borrower: ${trimmedName} (ID: ${borrowerId})`);
+    logActivity(userId, "Update Contact", `Updated contact: ${trimmedName} (ID: ${borrowerId})`);
     res.json({ success: true });
   });
 
   app.delete("/api/borrowers/:id", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
     db.prepare("DELETE FROM borrowers WHERE id = ? AND user_id = ?").run(req.params.id, userId);
-    logActivity(userId, "Delete Borrower", `Deleted borrower ID: ${req.params.id}`);
+    logActivity(userId, "Delete Contact", `Deleted contact ID: ${req.params.id}`);
     res.json({ success: true });
   });
 
@@ -856,7 +856,7 @@ async function startServer() {
   app.post("/api/loans", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
     const { borrower_id, amount, given_amount, loan_type, direction, interest_type, interest_rate, installment_amount, start_date, duration } = req.body;
-    if (!borrower_id) return res.status(400).json({ error: "Borrower is required." });
+    if (!borrower_id) return res.status(400).json({ error: "Contact is required." });
     if (!amount || amount <= 0) return res.status(400).json({ error: "Amount must be positive." });
     if (!given_amount || given_amount <= 0) return res.status(400).json({ error: "Given amount must be positive." });
     if (interest_rate < 0 || interest_rate > 100) return res.status(400).json({ error: "Interest rate must be between 0 and 100." });
@@ -866,13 +866,63 @@ async function startServer() {
     if (!start_date) return res.status(400).json({ error: "Start date is required." });
     // Verify borrower belongs to user
     const borrower = db.prepare("SELECT id FROM borrowers WHERE id = ? AND user_id = ?").get(borrower_id, userId);
-    if (!borrower) return res.status(404).json({ error: "Borrower not found." });
+    if (!borrower) return res.status(404).json({ error: "Contact not found." });
     const info = db.prepare(`
       INSERT INTO loans(user_id, borrower_id, amount, given_amount, loan_type, direction, interest_type, interest_rate, installment_amount, start_date, duration)
 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(userId, borrower_id, amount, given_amount, loan_type, direction || 'Lent', interest_type, interest_rate, installment_amount, start_date, duration);
-    logActivity(userId, "Add Loan", `Created ${loan_type} loan of ${amount} (ID: ${info.lastInsertRowid})`);
-    res.json({ id: info.lastInsertRowid });
+    const loanId = Number(info.lastInsertRowid);
+    logActivity(userId, "Add Loan", `Created ${loan_type} loan of ${amount} (ID: ${loanId})`);
+
+    // Auto-generate past interest entries for backdated loans
+    let generatedCount = 0;
+    if (loan_type === 'Interest Only' && interest_rate > 0 && start_date) {
+      const startDt = new Date(start_date + 'T00:00:00');
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      if (startDt < today) {
+        const interestAmount = amount * interest_rate / 100;
+        const insertPayment = db.prepare(
+          "INSERT INTO payments (user_id, loan_id, amount, payment_date, notes) VALUES (?, ?, ?, ?, ?)"
+        );
+
+        if (interest_type === 'Monthly') {
+          const cursor = new Date(startDt);
+          cursor.setMonth(cursor.getMonth() + 1); // first payment is one period after start
+          while (cursor <= today) {
+            const dateStr = cursor.toISOString().split('T')[0];
+            insertPayment.run(userId, loanId, interestAmount, dateStr, 'Auto-generated interest');
+            generatedCount++;
+            cursor.setMonth(cursor.getMonth() + 1);
+          }
+        } else if (interest_type === 'Weekly') {
+          const cursor = new Date(startDt);
+          cursor.setDate(cursor.getDate() + 7);
+          while (cursor <= today) {
+            const dateStr = cursor.toISOString().split('T')[0];
+            insertPayment.run(userId, loanId, interestAmount, dateStr, 'Auto-generated interest');
+            generatedCount++;
+            cursor.setDate(cursor.getDate() + 7);
+          }
+        } else if (interest_type === 'Daily') {
+          const cursor = new Date(startDt);
+          cursor.setDate(cursor.getDate() + 1);
+          while (cursor <= today) {
+            const dateStr = cursor.toISOString().split('T')[0];
+            insertPayment.run(userId, loanId, interestAmount, dateStr, 'Auto-generated interest');
+            generatedCount++;
+            cursor.setDate(cursor.getDate() + 1);
+          }
+        }
+
+        if (generatedCount > 0) {
+          logActivity(userId, "Auto-Generate Interest", `Generated ${generatedCount} ${interest_type.toLowerCase()} interest payments for loan ID: ${loanId}`);
+        }
+      }
+    }
+
+    res.json({ id: loanId, generatedPayments: generatedCount });
   });
 
   app.put("/api/loans/:id", authenticateToken, (req: AuthenticatedRequest, res) => {
@@ -1141,9 +1191,9 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     const group = db.prepare("SELECT id FROM chit_groups WHERE id = ? AND user_id = ?").get(groupId, userId);
     if (!group) return res.status(404).json({ error: "Chit group not found" });
     const { borrower_id, slot_number, joint_with, my_share, partner_share } = req.body;
-    if (!borrower_id || !slot_number) return res.status(400).json({ error: "Borrower and slot number are required" });
+    if (!borrower_id || !slot_number) return res.status(400).json({ error: "Contact and slot number are required" });
     const borrower = db.prepare("SELECT id FROM borrowers WHERE id = ? AND user_id = ?").get(borrower_id, userId);
-    if (!borrower) return res.status(404).json({ error: "Borrower not found" });
+    if (!borrower) return res.status(404).json({ error: "Contact not found" });
     const info = db.prepare(`
       INSERT INTO chit_members (user_id, chit_group_id, borrower_id, slot_number, joint_with, my_share, partner_share)
       VALUES (?, ?, ?, ?, ?, ?, ?)
