@@ -124,7 +124,7 @@ const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window
 
 const Card = ({ children, className = "", onClick, noHover = false, glass = false }: { children: React.ReactNode, className?: string, key?: React.Key, onClick?: () => void, noHover?: boolean, glass?: boolean }) => {
   const hasCustomBg = className.includes('bg-');
-  const baseClass = `rounded-2xl border shadow-sm overflow-hidden ${glass ? 'bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-white/20 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.08)]' : `border-black/5 dark:border-white/5 ${!hasCustomBg ? 'bg-white dark:bg-zinc-900' : ''}`} ${className} ${onClick ? 'cursor-pointer' : ''}`;
+  const baseClass = `rounded-2xl border shadow-3d overflow-hidden ${glass ? 'bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-white/20 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.08)]' : `border-black/5 dark:border-white/5 ${!hasCustomBg ? 'bg-white dark:bg-zinc-900' : ''}`} ${className} ${onClick ? 'cursor-pointer' : ''}`;
 
   if (noHover) {
     return <div onClick={onClick} className={baseClass}>{children}</div>;
@@ -135,9 +135,9 @@ const Card = ({ children, className = "", onClick, noHover = false, glass = fals
       initial={{ opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "0px" }}
-      whileHover={isTouchDevice ? {} : { y: -4, transition: { duration: 0.2 } }}
+      whileHover={isTouchDevice ? {} : { y: -4, scale: 1.01, transition: { duration: 0.2 } }}
       onClick={onClick}
-      className={baseClass}
+      className={`${baseClass} card-3d`}
     >
       {children}
     </motion.div>
@@ -172,14 +172,20 @@ const GlowCard = ({ children, className = "", color = 'indigo' }: { children: Re
   };
 
   return (
-    <div className="relative rounded-2xl p-[1px] overflow-hidden group">
-      <div className={`absolute inset-0 bg-gradient-to-r ${gradients[color] || gradients.indigo} opacity-0 group-hover:opacity-100 transition-opacity duration-500 animate-[spin_4s_linear_infinite]`}
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      whileHover={isTouchDevice ? {} : { y: -4, scale: 1.01, transition: { duration: 0.2 } }}
+      className="relative rounded-2xl p-[1px] overflow-hidden group card-3d"
+    >
+      <div className={`absolute inset-0 bg-gradient-to-r ${gradients[color] || gradients.indigo} opacity-20 group-hover:opacity-60 transition-opacity duration-500`}
         style={{ backgroundSize: '200% 200%', animation: 'gradientShift 3s ease infinite' }}
       />
-      <div className={`relative rounded-2xl bg-white dark:bg-zinc-900 ${className}`}>
+      <div className={`relative rounded-2xl bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm shadow-3d ${className}`}>
         {children}
       </div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -497,7 +503,7 @@ export default function App() {
     }
   };
 
-  const fetchActivityLogs = async () => {
+  const fetchActivityLogs = useCallback(async () => {
     try {
       const res = await offlineFetch('/api/activity', {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -506,7 +512,7 @@ export default function App() {
       const data = await res.json();
       setActivityLogs(Array.isArray(data) ? data : []);
     } catch { /* offline or network error */ }
-  };
+  }, [token]);
 
   const fetchStats = async () => {
     try {
@@ -1466,7 +1472,7 @@ export default function App() {
               <div className="flex justify-between items-start relative">
                 <div>
                   <p className="text-black/50 dark:text-white/40 text-[10px] font-bold uppercase tracking-widest">Total Capital</p>
-                  <h2 className="text-2xl font-black mt-1 bg-gradient-to-r from-amber-600 to-orange-500 bg-clip-text text-transparent">{user?.currency || '₹'}{(stats.investedCapital || 0).toLocaleString()}</h2>
+                  <h2 className="text-2xl font-black mt-1 bg-gradient-to-r from-amber-600 via-yellow-400 to-orange-500 bg-clip-text text-transparent bg-[length:200%_100%] animate-[shimmer_3s_ease-in-out_infinite]">{user?.currency || '₹'}{(stats.investedCapital || 0).toLocaleString()}</h2>
                 </div>
                 <div className="p-2 bg-amber-500/10 rounded-lg group-hover:bg-amber-500/20 transition-colors">
                   <TrendingUp size={20} className="text-amber-500" />
@@ -2284,12 +2290,11 @@ export default function App() {
     );
   };
 
-  const SettingsView = () => {
-    useEffect(() => {
-      fetchActivityLogs();
-    }, []);
+  useEffect(() => {
+    if (activeTab === 'settings') fetchActivityLogs();
+  }, [activeTab, fetchActivityLogs]);
 
-    return (
+  const SettingsView = () => (
       <div className="space-y-6 max-w-3xl">
         <Card className="p-6" noHover>
           <div className="flex items-center gap-4 mb-8">
@@ -2340,7 +2345,8 @@ export default function App() {
                   onClick={() => handleToggleBackup(user!.backup_enabled === 0)}
                   className={`w-12 h-6 rounded-full transition-all relative cursor-pointer ${user?.backup_enabled === 1 ? 'bg-emerald-500' : 'bg-black/10 dark:bg-white/10'}`}
                 >
-                  <motion.div 
+                  <motion.div
+                    initial={false}
                     animate={{ x: user?.backup_enabled === 1 ? 26 : 2 }}
                     className="absolute top-1 left-0 w-4 h-4 bg-white rounded-full shadow-sm"
                   />
@@ -2364,7 +2370,7 @@ export default function App() {
                     onClick={() => handleTogglePin(false)}
                     className="w-12 h-6 rounded-full bg-emerald-500 transition-all relative cursor-pointer"
                   >
-                    <motion.div animate={{ x: 26 }} className="absolute top-1 left-0 w-4 h-4 bg-white rounded-full shadow-sm" />
+                    <motion.div initial={false} animate={{ x: 26 }} className="absolute top-1 left-0 w-4 h-4 bg-white rounded-full shadow-sm" />
                   </button>
                 ) : (
                   <Button onClick={() => {
@@ -2594,7 +2600,6 @@ export default function App() {
       </div>
     </div>
   );
-};
 
   // --- Modals ---
 
@@ -3264,10 +3269,21 @@ export default function App() {
         <Suspense fallback={null}>
           <LoginBg />
         </Suspense>
-        <Card className="w-full max-w-md p-8 relative z-10 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl border-white/20 dark:border-white/10">
+        <div className="w-full max-w-md relative z-10 glow-border-animated">
+        <Card className="p-8 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl border-white/20 dark:border-white/10" noHover>
           <div className="flex flex-col items-center mb-8">
-            <div className="w-16 h-16 bg-black dark:bg-white rounded-2xl flex items-center justify-center text-white dark:text-black font-black text-3xl mb-4 shadow-xl">M</div>
-            <h1 className="text-3xl font-black tracking-tighter">Metrix</h1>
+            <motion.div
+              initial={{ scale: 0, rotate: -180 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+              className="w-16 h-16 bg-black dark:bg-white rounded-2xl flex items-center justify-center text-white dark:text-black font-black text-3xl mb-4 shadow-xl"
+            >M</motion.div>
+            <motion.h1
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="text-3xl font-black tracking-tighter"
+            >Metrix</motion.h1>
             <p className="text-black/40 dark:text-white/30 text-sm font-bold uppercase tracking-widest mt-1">
               {isLogin ? 'Access Vault' : 'Initialize Account'}
             </p>
@@ -3349,6 +3365,7 @@ export default function App() {
             </button>
           </div>
         </Card>
+        </div>
       </div>
     );
   }
@@ -3356,6 +3373,9 @@ export default function App() {
   return (
     <div className="min-h-screen noise-overlay css-particles">
       <AuroraBackground />
+      <div className="mesh-blob mesh-blob-1" />
+      <div className="mesh-blob mesh-blob-2" />
+      <div className="mesh-blob mesh-blob-3" />
       {/* Sidebar / Nav */}
       <nav aria-label="Main navigation" className="fixed bottom-0 left-0 right-0 md:top-0 md:bottom-0 md:w-20 lg:w-64 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-t md:border-t-0 md:border-r border-black/5 dark:border-white/5 z-40 flex md:flex-col">
         <div className="hidden md:flex p-6 mb-4">
@@ -3378,8 +3398,8 @@ export default function App() {
               whileTap={{ scale: 0.98 }}
               onClick={() => setActiveTab(tab.id as any)}
               className={`flex flex-col md:flex-row items-center gap-1 md:gap-3 p-3 md:px-4 md:py-3 rounded-xl transition-all ${
-                activeTab === tab.id 
-                  ? 'bg-black dark:bg-white text-white dark:text-black' 
+                activeTab === tab.id
+                  ? 'bg-black dark:bg-white text-white dark:text-black shadow-[0_4px_20px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_20px_rgba(255,255,255,0.15)]'
                   : 'text-black/40 dark:text-white/40 hover:bg-black/5 dark:hover:bg-white/5 hover:text-black dark:hover:text-white'
               }`}
             >
@@ -3393,7 +3413,7 @@ export default function App() {
       {/* Main Content */}
       <main className="pb-24 md:pb-8 md:pl-20 lg:pl-64 min-h-screen">
         <header className="sticky top-0 bg-[#F8F9FA]/80 dark:bg-zinc-950/80 backdrop-blur-md z-30 px-4 md:px-8 py-3 md:py-4 flex justify-between items-center border-b border-black/5 dark:border-white/5">
-          <h1 className="text-xl md:text-2xl font-black tracking-tight capitalize">{activeTab}</h1>
+          <h1 className="text-xl md:text-2xl font-black tracking-tight capitalize">{activeTab === 'borrowers' ? 'Contacts' : activeTab}</h1>
           <div className="flex items-center gap-3">
             <div className="flex items-center bg-black/5 dark:bg-white/5 p-1 rounded-full border border-black/5 dark:border-white/5">
               {user?.pin_enabled === 1 && (
@@ -3512,12 +3532,12 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
             >
-              {activeTab === 'dashboard' && <DashboardView />}
-              {activeTab === 'borrowers' && <BorrowersView />}
-              {activeTab === 'loans' && <LoansView />}
-              {activeTab === 'chitfunds' && <ChitFundsView />}
-              {activeTab === 'reports' && <ReportsView />}
-              {activeTab === 'settings' && <SettingsView />}
+              {activeTab === 'dashboard' && DashboardView()}
+              {activeTab === 'borrowers' && BorrowersView()}
+              {activeTab === 'loans' && LoansView()}
+              {activeTab === 'chitfunds' && ChitFundsView()}
+              {activeTab === 'reports' && ReportsView()}
+              {activeTab === 'settings' && SettingsView()}
             </motion.div>
           </AnimatePresence>
         </div>

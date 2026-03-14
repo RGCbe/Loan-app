@@ -82,6 +82,186 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* 3D Card Tilt on Hover */
+.card-3d {
+  transform-style: preserve-3d;
+  perspective: 1000px;
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.card-3d:hover {
+  transform: perspective(1000px) rotateX(-2deg) rotateY(3deg) translateY(-4px);
+  box-shadow:
+    0 20px 40px rgba(0, 0, 0, 0.08),
+    0 8px 16px rgba(0, 0, 0, 0.04),
+    0 2px 4px rgba(0, 0, 0, 0.02);
+}
+.dark .card-3d:hover {
+  box-shadow:
+    0 20px 40px rgba(0, 0, 0, 0.3),
+    0 8px 16px rgba(0, 0, 0, 0.2),
+    0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+/* Animated Gradient Border */
+@property --border-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.glow-border-animated {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+}
+.glow-border-animated::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: conic-gradient(
+    from var(--border-angle),
+    #6366f1, #ec4899, #06b6d4, #8b5cf6, #6366f1
+  );
+  border-radius: inherit;
+  animation: rotateBorder 4s linear infinite;
+  z-index: -1;
+}
+.glow-border-animated::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  background: #F8F9FA;
+  border-radius: 14px;
+  z-index: -1;
+}
+.dark .glow-border-animated::after {
+  background: #18181b;
+}
+
+@keyframes rotateBorder {
+  to { --border-angle: 360deg; }
+}
+
+/* Shimmer/Shine effect on text */
+.shimmer-text {
+  background: linear-gradient(
+    110deg,
+    currentColor 35%,
+    rgba(255, 255, 255, 0.8) 50%,
+    currentColor 65%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0%, 100% { background-position: 200% 0; }
+  50% { background-position: -200% 0; }
+}
+
+/* Floating mesh gradient blobs */
+.mesh-blob {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.12;
+  pointer-events: none;
+  z-index: -1;
+  animation: blobFloat 20s ease-in-out infinite alternate;
+}
+.mesh-blob-1 {
+  width: 400px;
+  height: 400px;
+  top: -10%;
+  right: -5%;
+  background: radial-gradient(circle, #6366f1, transparent 70%);
+  animation-delay: 0s;
+}
+.mesh-blob-2 {
+  width: 350px;
+  height: 350px;
+  bottom: 10%;
+  left: -8%;
+  background: radial-gradient(circle, #ec4899, transparent 70%);
+  animation-delay: -7s;
+}
+.mesh-blob-3 {
+  width: 300px;
+  height: 300px;
+  top: 40%;
+  right: 20%;
+  background: radial-gradient(circle, #06b6d4, transparent 70%);
+  animation-delay: -14s;
+}
+
+.dark .mesh-blob { opacity: 0.06; }
+
+@keyframes blobFloat {
+  0% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -30px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.9); }
+  100% { transform: translate(10px, -10px) scale(1.05); }
+}
+
+/* Depth shadow for 3D effect */
+.shadow-3d {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 8px rgba(0, 0, 0, 0.04),
+    0 8px 16px rgba(0, 0, 0, 0.04),
+    0 16px 32px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+.shadow-3d:hover {
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.04),
+    0 8px 16px rgba(0, 0, 0, 0.06),
+    0 16px 32px rgba(0, 0, 0, 0.06),
+    0 32px 64px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px);
+}
+
+.dark .shadow-3d {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.2),
+    0 4px 8px rgba(0, 0, 0, 0.15),
+    0 8px 16px rgba(0, 0, 0, 0.1),
+    0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 2px;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Smooth page transitions */
+.page-enter {
+  animation: pageIn 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes pageIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @layer base {
   :root {
     color-scheme: light dark;
