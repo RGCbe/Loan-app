@@ -964,6 +964,16 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     res.json({ success: true });
   });
 
+  app.delete("/api/loans/:id", authenticateToken, (req: AuthenticatedRequest, res) => {
+    const userId = req.user!.id;
+    const loan = db.prepare("SELECT * FROM loans WHERE id = ? AND user_id = ?").get(req.params.id, userId) as any;
+    if (!loan) return res.status(404).json({ error: "Loan not found." });
+    db.prepare("DELETE FROM payments WHERE loan_id = ? AND user_id = ?").run(req.params.id, userId);
+    db.prepare("DELETE FROM loans WHERE id = ? AND user_id = ?").run(req.params.id, userId);
+    logActivity(userId, "Delete Loan", `Deleted loan ID: ${req.params.id} (Amount: ${loan.amount})`);
+    res.json({ success: true });
+  });
+
   // Payments
   app.get("/api/loans/:id/payments", authenticateToken, (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;

@@ -787,6 +787,23 @@ export default function App() {
     setShowEditBorrowerModal(true);
   };
 
+  const handleDeleteLoan = async (loan: Loan) => {
+    if (!confirm(`Delete Loan #${loan.id} (${user?.currency || '₹'}${loan.amount.toLocaleString()})? All payments for this loan will also be deleted. This cannot be undone.`)) return;
+    const res = await offlineFetch(`/api/loans/${loan.id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    trackQueue();
+    if (res.ok) {
+      fetchLoans();
+      fetchStats();
+      if (viewingBorrowerProfile) fetchBorrowerLoans(viewingBorrowerProfile.id);
+      showToast('Loan deleted');
+    } else {
+      showToast('Failed to delete loan', 'error');
+    }
+  };
+
   const handleCreateLoan = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (isSubmitting) return;
@@ -2160,6 +2177,9 @@ export default function App() {
                           Close
                         </Button>
                       )}
+                      <button onClick={() => handleDeleteLoan(loan)} className="p-2 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg text-red-500 transition-all">
+                        <Trash2 size={14} />
+                      </button>
                     </div>
                 </td>
               </motion.tr>
@@ -4344,6 +4364,9 @@ export default function App() {
                               Add Payment
                             </Button>
                           )}
+                          <button onClick={() => handleDeleteLoan(loan)} className="px-3 py-1.5 rounded-xl border border-red-200 dark:border-red-500/20 text-red-500 text-xs font-bold hover:bg-red-50 dark:hover:bg-red-500/10 transition-all">
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                         {loan.status === 'Active' && loan.loan_type === 'Interest Only' && new Date(loan.start_date) < new Date() && (
                           <button
