@@ -124,15 +124,20 @@ const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window
 
 const Card = ({ children, className = "", onClick, noHover = false, glass = false }: { children: React.ReactNode, className?: string, key?: React.Key, onClick?: () => void, noHover?: boolean, glass?: boolean }) => {
   const hasCustomBg = className.includes('bg-');
+  const baseClass = `rounded-2xl border shadow-sm overflow-hidden ${glass ? 'bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-white/20 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.08)]' : `border-black/5 dark:border-white/5 ${!hasCustomBg ? 'bg-white dark:bg-zinc-900' : ''}`} ${className} ${onClick ? 'cursor-pointer' : ''}`;
+
+  if (noHover) {
+    return <div onClick={onClick} className={baseClass}>{children}</div>;
+  }
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "0px" }}
-      whileHover={noHover || isTouchDevice ? {} : { y: -4, transition: { duration: 0.2 } }}
+      whileHover={isTouchDevice ? {} : { y: -4, transition: { duration: 0.2 } }}
       onClick={onClick}
-      className={`rounded-2xl border shadow-sm overflow-hidden ${glass ? 'bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-white/20 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.08)]' : `border-black/5 dark:border-white/5 ${!hasCustomBg ? 'bg-white dark:bg-zinc-900' : ''}`} ${className} ${onClick ? 'cursor-pointer' : ''}`}
+      className={baseClass}
     >
       {children}
     </motion.div>
@@ -2285,15 +2290,8 @@ export default function App() {
     }, []);
 
     return (
-      <motion.div 
-        initial="hidden"
-        animate="visible"
-        variants={{
-          visible: { transition: { staggerChildren: 0.05 } }
-        }}
-        className="space-y-6 max-w-3xl"
-      >
-        <Card className="p-6">
+      <div className="space-y-6 max-w-3xl">
+        <Card className="p-6" noHover>
           <div className="flex items-center gap-4 mb-8">
             <div className="w-16 h-16 rounded-2xl bg-black dark:bg-white text-white dark:text-black flex items-center justify-center text-2xl font-black">
               {user?.username?.[0].toUpperCase()}
@@ -2421,7 +2419,7 @@ export default function App() {
           </div>
         </Card>
 
-        <Card className="p-6">
+        <Card className="p-6" noHover>
           <h4 className="font-bold mb-4">Preferences</h4>
           <div className="space-y-4">
             <div className="flex flex-col gap-1.5 w-full">
@@ -2451,7 +2449,7 @@ export default function App() {
           </div>
         </Card>
 
-        <Card className="p-6">
+        <Card className="p-6" noHover>
           <h4 className="font-bold mb-4">Legal & Policies</h4>
           
 
@@ -2494,7 +2492,7 @@ export default function App() {
           </div>
         </Card>
 
-        <Card className="p-6">
+        <Card className="p-6" noHover>
           <h4 className="font-bold mb-4 flex items-center justify-between">
             Activity Log
             <button onClick={fetchActivityLogs} className="text-[10px] text-indigo-500 uppercase tracking-widest hover:underline">Refresh</button>
@@ -2521,7 +2519,7 @@ export default function App() {
           </div>
         </Card>
 
-        <Card className="p-6">
+        <Card className="p-6" noHover>
           <h4 className="font-bold mb-4">Data Management</h4>
         <div className="space-y-3">
           <button 
@@ -2594,7 +2592,7 @@ export default function App() {
       <div className="text-center py-4">
         <p className="text-[10px] font-bold text-black/20 dark:text-white/10 uppercase tracking-[0.2em]">Metrix v2.0.0 • Finance Simplified</p>
       </div>
-    </motion.div>
+    </div>
   );
 };
 
