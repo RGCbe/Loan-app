@@ -3532,12 +3532,12 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
             >
-              {activeTab === 'dashboard' && DashboardView()}
-              {activeTab === 'borrowers' && BorrowersView()}
-              {activeTab === 'loans' && LoansView()}
-              {activeTab === 'chitfunds' && ChitFundsView()}
-              {activeTab === 'reports' && ReportsView()}
-              {activeTab === 'settings' && SettingsView()}
+              {activeTab === 'dashboard' && <DashboardView />}
+              {activeTab === 'borrowers' && <BorrowersView />}
+              {activeTab === 'loans' && <LoansView />}
+              {activeTab === 'chitfunds' && <ChitFundsView />}
+              {activeTab === 'reports' && <ReportsView />}
+              {activeTab === 'settings' && <SettingsView />}
             </motion.div>
           </AnimatePresence>
         </div>
