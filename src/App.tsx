@@ -120,32 +120,18 @@ const PricingModal = ({ isOpen, onClose, onUpgrade }: { isOpen: boolean, onClose
 
 // --- Components ---
 
+const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+
 const Card = ({ children, className = "", onClick, noHover = false, glass = false }: { children: React.ReactNode, className?: string, key?: React.Key, onClick?: () => void, noHover?: boolean, glass?: boolean }) => {
   const hasCustomBg = className.includes('bg-');
-  const ref = React.useRef<HTMLDivElement>(null);
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (noHover || !ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width - 0.5;
-    const y = (e.clientY - rect.top) / rect.height - 0.5;
-    ref.current.style.transform = `perspective(800px) rotateY(${x * 6}deg) rotateX(${-y * 6}deg) translateY(-4px)`;
-  };
-
-  const handleMouseLeave = () => {
-    if (ref.current) ref.current.style.transform = 'perspective(800px) rotateY(0) rotateX(0) translateY(0)';
-  };
 
   return (
     <motion.div
-      ref={ref}
       initial={{ opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "0px" }}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
+      whileHover={noHover || isTouchDevice ? {} : { y: -4, transition: { duration: 0.2 } }}
       onClick={onClick}
-      style={{ transition: 'transform 0.2s ease-out', transformStyle: 'preserve-3d' }}
       className={`rounded-2xl border shadow-sm overflow-hidden ${glass ? 'bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-white/20 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.08)]' : `border-black/5 dark:border-white/5 ${!hasCustomBg ? 'bg-white dark:bg-zinc-900' : ''}`} ${className} ${onClick ? 'cursor-pointer' : ''}`}
     >
       {children}
