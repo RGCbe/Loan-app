@@ -270,7 +270,7 @@ const Select = ({ label, options, ...props }: { label?: string, options: { value
       {...props}
       className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-black/5 dark:focus:ring-white/5 transition-all bg-white dark:bg-zinc-800 text-black dark:text-white appearance-none"
     >
-      {options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+      {(options || []).map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
     </select>
   </div>
 );
@@ -513,7 +513,7 @@ export default function App() {
       });
       if (!res.ok) return;
       const data = await res.json();
-      setActivityLogs(data);
+      setActivityLogs(Array.isArray(data) ? data : []);
     } catch { /* offline or network error */ }
   };
 
@@ -535,7 +535,7 @@ export default function App() {
       });
       if (!res.ok) return;
       const data = await res.json();
-      setBorrowers(data);
+      setBorrowers(Array.isArray(data) ? data : []);
     } catch { /* offline or network error */ }
   };
 
@@ -546,28 +546,28 @@ export default function App() {
       });
       if (!res.ok) return;
       const data = await res.json();
-      setLoans(data);
+      setLoans(Array.isArray(data) ? data : []);
     } catch { /* offline or network error */ }
   };
 
   const fetchChitGroups = async () => {
     const res = await offlineFetch('/api/chit-groups', { headers: { 'Authorization': `Bearer ${token}` } });
-    if (res.ok) setChitGroups(await res.json());
+    if (res.ok) { const d = await res.json(); setChitGroups(Array.isArray(d) ? d : []); }
   };
 
   const fetchChitMembers = async (groupId: number) => {
     const res = await offlineFetch(`/api/chit-groups/${groupId}/members`, { headers: { 'Authorization': `Bearer ${token}` } });
-    if (res.ok) setChitMembers(await res.json());
+    if (res.ok) { const d = await res.json(); setChitMembers(Array.isArray(d) ? d : []); }
   };
 
   const fetchChitAuctions = async (groupId: number) => {
     const res = await offlineFetch(`/api/chit-groups/${groupId}/auctions`, { headers: { 'Authorization': `Bearer ${token}` } });
-    if (res.ok) setChitAuctions(await res.json());
+    if (res.ok) { const d = await res.json(); setChitAuctions(Array.isArray(d) ? d : []); }
   };
 
   const fetchChitPayments = async (groupId: number) => {
     const res = await offlineFetch(`/api/chit-groups/${groupId}/payments`, { headers: { 'Authorization': `Bearer ${token}` } });
-    if (res.ok) setChitPayments(await res.json());
+    if (res.ok) { const d = await res.json(); setChitPayments(Array.isArray(d) ? d : []); }
   };
 
   const fetchBorrowerLoans = async (borrowerId: number) => {
@@ -575,7 +575,7 @@ export default function App() {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const data = await response.json();
-    setLoans(data);
+    setLoans(Array.isArray(data) ? data : []);
   };
 
   const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
@@ -876,7 +876,7 @@ export default function App() {
     });
     if (res.ok) {
       const data = await res.json();
-      setExpandedLoanPayments(prev => ({ ...prev, [loanId]: data }));
+      setExpandedLoanPayments(prev => ({ ...prev, [loanId]: Array.isArray(data) ? data : [] }));
       setExpandedLoanId(loanId);
     }
   };
