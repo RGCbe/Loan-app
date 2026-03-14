@@ -860,6 +860,7 @@ async function startServer() {
     if (!amount || amount <= 0) return res.status(400).json({ error: "Amount must be positive." });
     if (!given_amount || given_amount <= 0) return res.status(400).json({ error: "Given amount must be positive." });
     if (interest_rate < 0 || interest_rate > 100) return res.status(400).json({ error: "Interest rate must be between 0 and 100." });
+    if (loan_type === 'Interest Only' && (!interest_rate || interest_rate <= 0)) return res.status(400).json({ error: "Interest rate is required for Interest Only loans." });
     if (!interest_type || !VALID_INTEREST_TYPES.includes(interest_type)) return res.status(400).json({ error: "Interest type must be Daily, Weekly, or Monthly." });
     if (loan_type && !VALID_LOAN_TYPES.includes(loan_type)) return res.status(400).json({ error: "Loan type must be 'Interest Only' or 'Installment'." });
     if (direction && !VALID_DIRECTIONS.includes(direction)) return res.status(400).json({ error: "Direction must be 'Lent' or 'Borrowed'." });
@@ -1030,6 +1031,7 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     const loan = db.prepare("SELECT * FROM loans WHERE id = ? AND user_id = ?").get(req.params.id, userId) as any;
     if (!loan) return res.status(404).json({ error: "Loan not found." });
     if (loan.loan_type !== 'Interest Only') return res.status(400).json({ error: "Only Interest Only loans support this." });
+    if (!loan.interest_rate || loan.interest_rate <= 0) return res.status(400).json({ error: "Interest rate must be greater than 0%. Edit the loan first to set the rate." });
 
     const startDate = new Date(loan.start_date);
     const now = new Date();

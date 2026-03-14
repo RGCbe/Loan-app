@@ -3862,13 +3862,15 @@ export default function App() {
             <Input label={`Cash Given (${user?.currency || '₹'})`} name="given_amount" type="number" required placeholder="8000" />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Interest Rate (%)" name="interest_rate" type="number" step="0.1" placeholder="5.0" />
+            <Input label="Interest Rate (%) *" name="interest_rate" type="number" step="0.1" required placeholder="e.g. 2, 3, 5" />
             <Input label={`Installment (${user?.currency || '₹'})`} name="installment_amount" type="number" placeholder="100" />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Duration (Optional)" name="duration" type="number" placeholder="12" />
           </div>
-          <p className="text-[10px] text-black/40 italic">* For Installment plans, set the fixed amount per day/week. For Interest Only, set the rate.</p>
+          <div className="p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl text-xs text-amber-700 dark:text-amber-400">
+            <strong>Interest Only:</strong> Enter the % rate per period. E.g., 2% Monthly on ₹1,00,000 = ₹2,000/month interest.
+          </div>
           <Button type="submit" className="w-full py-3" disabled={isSubmitting}>{isSubmitting ? 'Creating...' : 'Create Loan'}</Button>
         </form>
       </Modal>
